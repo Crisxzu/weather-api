@@ -5,13 +5,11 @@ import pytz
 import requests
 import json
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 import re
 
 from rest_framework_api_key.permissions import HasAPIKey
-from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from api.serializers import WeatherDataSerializer
 
