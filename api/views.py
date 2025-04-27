@@ -105,7 +105,8 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
                         code=data['current']['condition']['code'],
                         is_day=current_is_day,
                         lang_iso=lang_iso
-                    )
+                    ),
+                    'icon': int(f"{data['current']['condition']['icon'].split('/')[-1].split('.')[0]}"),
                 } ,
             },
             'next_24h': get_next_24h_forecast(
@@ -183,7 +184,8 @@ def get_next_24h_forecast(now, forecast_data, lang_iso : str = None):
                     code=forecast_hour['condition']['code'],
                     is_day=forecast_hour['is_day'],
                     lang_iso=lang_iso
-                )
+                ),
+                'icon': int(f"{forecast_hour['condition']['icon'].split('/')[-1].split('.')[0]}"),
             }
         }
             for forecast_hour in forecast_hours
@@ -207,7 +209,8 @@ def get_next_days_forecast(now, forecast_data, lang_iso : str = None):
                     code=forecast_day['condition']['code'],
                     is_day=True,
                     lang_iso=lang_iso
-                )
+                ),
+                'icon': int(f"{forecast_day['condition']['icon'].split('/')[-1].split('.')[0]}"),
             }
         }
         for forecast_day in forecast_days

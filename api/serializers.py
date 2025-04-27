@@ -6,6 +6,7 @@ humidity_interval = {'min_value': 0, 'max_value': 100}
 class ConditionSerializer(serializers.Serializer):
     code = serializers.IntegerField()
     text = serializers.CharField(max_length=200)
+    icon = serializers.IntegerField()
 
 class LocationSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
