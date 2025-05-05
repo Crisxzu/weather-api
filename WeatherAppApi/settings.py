@@ -26,15 +26,18 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-bydq$*9wvfq1^(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
+print(DEBUG)
 DJANGO_HOST = os.environ.get('DJANGO_HOST')
 
 if DEBUG:
     ALLOWED_HOSTS = [
         '10.0.2.2', # IP of host on android emulated device
-        'localhost'
+        '127.0.0.1',
+        'localhost',
     ]
 else:
     ALLOWED_HOSTS = [
+        '127.0.0.1',
         DJANGO_HOST
     ]
     CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_HOST}']
