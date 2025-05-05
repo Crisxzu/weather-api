@@ -186,7 +186,8 @@ def get_next_24h_forecast(now, forecast_data, lang_iso : str = None):
                     lang_iso=lang_iso
                 ),
                 'icon': int(f"{forecast_hour['condition']['icon'].split('/')[-1].split('.')[0]}"),
-            }
+            },
+            'is_day': forecast_hour['is_day'],
         }
             for forecast_hour in forecast_hours
                 if now.timestamp() <= forecast_hour['time_epoch'] <= datetime_in_24h.timestamp()
@@ -211,7 +212,8 @@ def get_next_days_forecast(now, forecast_data, lang_iso : str = None):
                     lang_iso=lang_iso
                 ),
                 'icon': int(f"{forecast_day['condition']['icon'].split('/')[-1].split('.')[0]}"),
-            }
+            },
+            'is_day': True,
         }
         for forecast_day in forecast_days
     ]

@@ -30,6 +30,7 @@ class HourlyForecastSerializer(serializers.Serializer):
     temp = serializers.FloatField(**temp_interval)
     humidity = serializers.FloatField(**humidity_interval)
     timestamp = serializers.IntegerField()
+    is_day = serializers.BooleanField()
     condition = ConditionSerializer()
 
 class DailyForecastSerializer(serializers.Serializer):
@@ -37,6 +38,7 @@ class DailyForecastSerializer(serializers.Serializer):
     max_temp = serializers.FloatField(**temp_interval)
     humidity = serializers.FloatField(**humidity_interval)
     timestamp = serializers.IntegerField()
+    is_day = serializers.BooleanField()
     condition = ConditionSerializer()
 
 class WeatherDataSerializer(serializers.Serializer):

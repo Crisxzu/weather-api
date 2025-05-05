@@ -25,9 +25,25 @@ env_path = load_dotenv(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-bydq$*9wvfq1^(qngqm62^#r@%6a2o&2*x-!6&zv(%$$=ml_36')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
+DJANGO_HOST = os.environ.get('DJANGO_HOST')
 
-ALLOWED_HOSTS = []
+if DEBUG:
+    ALLOWED_HOSTS = [
+        '10.0.2.2', # IP of host on android emulated device
+        'localhost'
+    ]
+else:
+    ALLOWED_HOSTS = [
+        DJANGO_HOST
+    ]
+    CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_HOST}']
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_PRELOAD = True
 
 
 # Application definition
