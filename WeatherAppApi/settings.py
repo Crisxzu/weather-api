@@ -27,6 +27,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-bydq$*9wvfq1^(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
 DJANGO_HOST = os.environ.get('DJANGO_HOST')
+DJANGO_ORIGIN = os.environ.get('DJANGO_ORIGIN')
 
 if DEBUG:
     ALLOWED_HOSTS = [
@@ -38,7 +39,7 @@ else:
     ALLOWED_HOSTS = [
         DJANGO_HOST
     ]
-    CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_HOST}']
+    CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_ORIGIN}']
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_SSL_REDIRECT = True
