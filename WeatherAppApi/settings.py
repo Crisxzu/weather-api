@@ -26,7 +26,6 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-bydq$*9wvfq1^(
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
-print(DEBUG)
 DJANGO_HOST = os.environ.get('DJANGO_HOST')
 
 if DEBUG:
