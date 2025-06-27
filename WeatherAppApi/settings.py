@@ -37,7 +37,8 @@ if DEBUG:
     ]
 else:
     ALLOWED_HOSTS = [
-        DJANGO_HOST
+        DJANGO_HOST,
+        DJANGO_ORIGIN
     ]
     CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_ORIGIN}']
     SECURE_HSTS_SECONDS = 31536000
@@ -47,6 +48,12 @@ else:
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_PRELOAD = True
 
+CORS_ALLOWED_ORIGINS = [
+    f'https://{DJANGO_ORIGIN}',
+    f'https://{DJANGO_HOST}',
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
 
 # Application definition
 
@@ -59,11 +66,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     "rest_framework_api_key",
+    "corsheaders"
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
