@@ -10,7 +10,7 @@ class ConditionSerializer(serializers.Serializer):
 
 class LocationSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200)
-    region = serializers.CharField(max_length=200)
+    region = serializers.CharField(max_length=200, allow_blank=True)
     country = serializers.CharField(max_length=200)
     lat = serializers.FloatField(min_value=-90.0, max_value=90.0)
     lon = serializers.FloatField(min_value=-180.0, max_value=180.0)
