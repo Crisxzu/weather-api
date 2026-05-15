@@ -29,24 +29,24 @@ DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
 DJANGO_HOST = os.environ.get('DJANGO_HOST')
 DJANGO_ORIGIN = os.environ.get('DJANGO_ORIGIN')
 
-
-CORS_ALLOWED_ORIGINS = [
-    f'https://{DJANGO_ORIGIN}',
-    f'https://{DJANGO_HOST}',
-]
-
 if DEBUG:
     ALLOWED_HOSTS = [
         '10.0.2.2', # IP of host on android emulated device
         '127.0.0.1',
         'localhost',
     ]
-    CORS_ALLOWED_ORIGINS.append("http://localhost:8000")
-    CORS_ALLOWED_ORIGINS.append("http://127.0.0.1:8000")
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
 else:
     ALLOWED_HOSTS = [
         DJANGO_HOST,
         DJANGO_ORIGIN
+    ]
+    CORS_ALLOWED_ORIGINS = [
+        f'https://{DJANGO_ORIGIN}',
+        f'https://{DJANGO_HOST}',
     ]
     CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_ORIGIN}']
     SECURE_HSTS_SECONDS = 31536000
