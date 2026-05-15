@@ -83,12 +83,16 @@ class WeatherDataView(APIView):
                 lang_iso=lang_iso,
             )
         except ValueError as e:
+            logger.warning('Bad request: %s', e)
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except WeatherServiceUnavailableError as e:
+            logger.error('Weather service unavailable: %s', e)
             return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except WeatherServiceError as e:
+            logger.error('Weather service error (HTTP %s, code %s): %s', e.http_status, e.error_code, e.message)
             return Response({'error': e.message}, status=e.http_status)
         except Exception:
+            logger.exception('Unexpected exception while handling weather request')
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         serializer = WeatherDataSerializer(data=weather_data)
