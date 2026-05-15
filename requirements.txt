@@ -2,7 +2,7 @@ asgiref==3.8.1
 certifi==2025.1.31
 cffi==1.17.1
 charset-normalizer==3.4.1
-cryptography==44.0.2
+cryptography==46.0.7
 Django==4.2.27
 django-cors-headers==4.7.0
 django-filter==25.1
@@ -12,11 +12,11 @@ idna==3.10
 Markdown==3.7
 pycparser==2.22
 PyJWT==2.9.0
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 pytz==2025.2
-requests==2.32.4
-sqlparse==0.5.3
+requests==2.33.0
+sqlparse==0.5.4
 typing_extensions==4.12.2
 tzdata==2024.2
-urllib3==2.6.3
+urllib3==2.7.0
 psycopg2-binary==2.9.11
