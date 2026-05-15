@@ -53,6 +53,7 @@ class WeatherDataView(APIView):
     permission_classes = [HasAPIKey]
     def get(self, request):
         position = request.query_params.get('position')
+        city = request.query_params.get('city')
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
             ip_address = x_forwarded_for.split(',')[0]
@@ -61,11 +62,13 @@ class WeatherDataView(APIView):
         lang_iso = request.query_params.get('lang_iso', 'en')
 
         print(f'position: {position}')
+        print(f'city: {city}')
         print(f'lang_iso: {lang_iso}')
         print(f'ip_address: {ip_address}')
         try:
             weather_data = get_current_weather(
                 position=position,
+                city=city,
                 ip_address=ip_address,
                 lang_iso=lang_iso,
             )
@@ -87,7 +90,7 @@ class WeatherDataView(APIView):
 
 
 
-def get_current_weather(position : str = None, ip_address : str = None, lang_iso : str = None):
+def get_current_weather(position : str = None, city: str = None, ip_address : str = None, lang_iso : str = None):
     url = f"{os.getenv('WEATHER_API_BASE_URL')}/forecast.json"
     params = {
         'key': os.getenv('WEATHER_API_KEY'),
@@ -97,11 +100,13 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
     }
     if position and re.match(position_regex, position):
         params['q'] = position
+    elif city and city.strip():
+        params['q'] = city.strip()
     elif ip_address and re.match(ip_address_regex, ip_address):
         params['q'] = ip_address
 
     if params.get('q') is None:
-        raise ValueError('No valid position or IP address provided')
+        raise ValueError('No valid position, city or IP address provided')
 
     cache_key = f"weather_{params['q']}_{lang_iso}"
     cached = cache.get(cache_key)
