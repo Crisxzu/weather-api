@@ -21,4 +21,4 @@ EXPOSE 8000
 
 RUN pip install "gunicorn==23.0.0"
 
-CMD ["gunicorn", "WeatherAppApi.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "WeatherAppApi.wsgi:application", "--config", "gunicorn.conf.py"]
