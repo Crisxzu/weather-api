@@ -15,7 +15,12 @@ from rest_framework_api_key.permissions import HasAPIKey
 
 from api.serializers import WeatherDataSerializer
 
-# Create your views here.
+
+class WeatherServiceUnavailableError(Exception):
+    pass
+
+class WeatherServiceError(Exception):
+    pass
 
 position_regex = "\-?\d+(\.\d+)?,-?\d+(\.\d+)?"
 ip_address_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
@@ -40,14 +45,20 @@ class WeatherDataView(APIView):
         print(f'position: {position}')
         print(f'lang_iso: {lang_iso}')
         print(f'ip_address: {ip_address}')
-        weather_data = get_current_weather(
-            position=position,
-            ip_address=ip_address,
-            lang_iso=lang_iso,
-        )
-
-        if not weather_data:
+        try:
+            weather_data = get_current_weather(
+                position=position,
+                ip_address=ip_address,
+                lang_iso=lang_iso,
+            )
+        except ValueError:
             return Response(status=status.HTTP_400_BAD_REQUEST)
+        except WeatherServiceUnavailableError:
+            return Response(status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except WeatherServiceError:
+            return Response(status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         serializer = WeatherDataSerializer(data=weather_data)
 
@@ -72,7 +83,7 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
         params['q'] = ip_address
 
     if params.get('q') is None:
-        return None
+        raise ValueError('No valid position or IP address provided')
 
     cache_key = f"weather_{params['q']}_{lang_iso}"
     cached = cache.get(cache_key)
@@ -80,16 +91,24 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
         return cached
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
+    except requests.exceptions.ConnectionError as e:
+        print(e)
+        raise WeatherServiceUnavailableError('Weather API unreachable')
+    except requests.exceptions.Timeout as e:
+        print(e)
+        raise WeatherServiceUnavailableError('Weather API timed out')
 
-        if response.status_code != 200:
-            return None
+    if response.status_code != 200:
+        print(f'Weather API returned {response.status_code}: {response.text}')
+        raise WeatherServiceError(f'Weather API returned {response.status_code}')
 
+    try:
         data = response.json()
         now = get_time_for_timezone(tz_id=data['location']['tz_id'])
 
         if now is None:
-            return None
+            raise WeatherServiceError('Invalid timezone in weather response')
 
         now_hour = now - timedelta(minutes=now.minute, seconds=now.second, microseconds=now.microsecond)
 
@@ -115,7 +134,7 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
                         lang_iso=lang_iso
                     ),
                     'icon': int(f"{data['current']['condition']['icon'].split('/')[-1].split('.')[0]}"),
-                } ,
+                },
             },
             'next_24h': get_next_24h_forecast(
                 now=now_hour,
@@ -131,9 +150,11 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
         cache.set(cache_key, result, CACHE_TTL)
         return result
 
+    except (WeatherServiceError, WeatherServiceUnavailableError):
+        raise
     except Exception as e:
         print(e)
-        return None
+        raise
 
 
 
