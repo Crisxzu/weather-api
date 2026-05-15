@@ -20,7 +20,25 @@ class WeatherServiceUnavailableError(Exception):
     pass
 
 class WeatherServiceError(Exception):
-    pass
+    MESSAGES = {
+        1002: 'API key not provided.',
+        1003: "Parameter 'q' not provided.",
+        1005: 'API request URL is invalid.',
+        1006: 'No location found matching the provided parameter.',
+        2006: 'API key is invalid.',
+        2007: 'API key has exceeded its monthly call quota.',
+        2008: 'API key has been disabled.',
+        2009: 'API key does not have access to this resource.',
+        9000: 'Invalid JSON body in request.',
+        9001: 'Too many locations in bulk request.',
+        9999: 'Internal weather service error.',
+    }
+
+    def __init__(self, http_status, error_code=None):
+        self.http_status = http_status
+        self.error_code = error_code
+        self.message = self.MESSAGES.get(error_code, 'An unexpected error occurred with the weather service.')
+        super().__init__(self.message)
 
 position_regex = "\-?\d+(\.\d+)?,-?\d+(\.\d+)?"
 ip_address_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
@@ -51,12 +69,12 @@ class WeatherDataView(APIView):
                 ip_address=ip_address,
                 lang_iso=lang_iso,
             )
-        except ValueError:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-        except WeatherServiceUnavailableError:
-            return Response(status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except WeatherServiceError:
-            return Response(status=status.HTTP_502_BAD_GATEWAY)
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except WeatherServiceUnavailableError as e:
+            return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except WeatherServiceError as e:
+            return Response({'error': e.message}, status=e.http_status)
         except Exception:
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -100,8 +118,13 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
         raise WeatherServiceUnavailableError('Weather API timed out')
 
     if response.status_code != 200:
-        print(f'Weather API returned {response.status_code}: {response.text}')
-        raise WeatherServiceError(f'Weather API returned {response.status_code}')
+        error_code = None
+        try:
+            error_code = response.json().get('error', {}).get('code')
+        except Exception:
+            pass
+        print(f'Weather API returned {response.status_code}, error code: {error_code}')
+        raise WeatherServiceError(http_status=response.status_code, error_code=error_code)
 
     try:
         data = response.json()
