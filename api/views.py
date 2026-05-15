@@ -52,6 +52,16 @@ _conditions_path = Path(__file__).resolve().parent.parent / 'conditions.json'
 with open(_conditions_path, 'r') as f:
     conditions = json.load(f)
 
+def _log_cache_backend():
+    from django.conf import settings
+    backend = settings.CACHES['default']['BACKEND']
+    if 'redis' in backend.lower():
+        logger.info('Cache backend: Redis (%s)', settings.CACHES['default'].get('LOCATION'))
+    else:
+        logger.info('Cache backend: LocMemCache (in-process memory)')
+
+_log_cache_backend()
+
 class WeatherDataView(APIView):
     permission_classes = [HasAPIKey]
     def get(self, request):
