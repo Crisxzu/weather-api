@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import logging
 import os
 import pytz
 import requests
@@ -12,6 +13,8 @@ from rest_framework.views import APIView
 import re
 
 from rest_framework_api_key.permissions import HasAPIKey
+
+logger = logging.getLogger(__name__)
 
 from api.serializers import WeatherDataSerializer
 
@@ -61,10 +64,7 @@ class WeatherDataView(APIView):
             ip_address = request.META.get('REMOTE_ADDR')
         lang_iso = request.query_params.get('lang_iso', 'en')
 
-        print(f'position: {position}')
-        print(f'city: {city}')
-        print(f'lang_iso: {lang_iso}')
-        print(f'ip_address: {ip_address}')
+        logger.debug('Incoming request — position=%s city=%s ip=%s lang=%s', position, city, ip_address, lang_iso)
         try:
             weather_data = get_current_weather(
                 position=position,
@@ -84,7 +84,7 @@ class WeatherDataView(APIView):
         serializer = WeatherDataSerializer(data=weather_data)
 
         if not serializer.is_valid():
-            print(serializer.errors)
+            logger.error('Serializer validation failed: %s', serializer.errors)
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         return Response(serializer.data)
 
@@ -111,15 +111,18 @@ def get_current_weather(position : str = None, city: str = None, ip_address : st
     cache_key = f"weather_{params['q']}_{lang_iso}"
     cached = cache.get(cache_key)
     if cached:
+        logger.info('Cache hit for key=%s', cache_key)
         return cached
+
+    logger.info('Cache miss for key=%s — fetching from weather API', cache_key)
 
     try:
         response = requests.get(url, params=params, timeout=10)
     except requests.exceptions.ConnectionError as e:
-        print(e)
+        logger.error('Weather API unreachable: %s', e)
         raise WeatherServiceUnavailableError('Weather API unreachable')
     except requests.exceptions.Timeout as e:
-        print(e)
+        logger.error('Weather API timed out: %s', e)
         raise WeatherServiceUnavailableError('Weather API timed out')
 
     if response.status_code != 200:
@@ -128,7 +131,7 @@ def get_current_weather(position : str = None, city: str = None, ip_address : st
             error_code = response.json().get('error', {}).get('code')
         except Exception:
             pass
-        print(f'Weather API returned {response.status_code}, error code: {error_code}')
+        logger.warning('Weather API returned %s, error code: %s', response.status_code, error_code)
         raise WeatherServiceError(http_status=response.status_code, error_code=error_code)
 
     try:
@@ -176,12 +179,13 @@ def get_current_weather(position : str = None, city: str = None, ip_address : st
             )
         }
         cache.set(cache_key, result, CACHE_TTL)
+        logger.info('Weather data cached for key=%s (TTL=%ss)', cache_key, CACHE_TTL)
         return result
 
     except (WeatherServiceError, WeatherServiceUnavailableError):
         raise
     except Exception as e:
-        print(e)
+        logger.exception('Unexpected error while processing weather data: %s', e)
         raise
 
 
@@ -202,7 +206,7 @@ def get_time_for_timezone(tz_id):
         now_in_tz = datetime.now(timezone)
         return now_in_tz
     except pytz.exceptions.UnknownTimeZoneError:
-        print(f"Fuseau horaire inconnu : {tz_id}")
+        logger.error('Unknown timezone: %s', tz_id)
         return None
 
 
