@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import os
 import pytz
 import requests
 import json
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,9 +20,10 @@ from api.serializers import WeatherDataSerializer
 position_regex = "\-?\d+(\.\d+)?,-?\d+(\.\d+)?"
 ip_address_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
-conditions = []
+CACHE_TTL = int(os.getenv('WEATHER_CACHE_TTL', 3600))
 
-with open("conditions.json", 'r') as f:
+_conditions_path = Path(__file__).resolve().parent.parent / 'conditions.json'
+with open(_conditions_path, 'r') as f:
     conditions = json.load(f)
 
 class WeatherDataView(APIView):
@@ -71,6 +74,11 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
     if params.get('q') is None:
         return None
 
+    cache_key = f"weather_{params['q']}_{lang_iso}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
+
     try:
         response = requests.get(url, params=params)
 
@@ -88,7 +96,7 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
         current_is_day = bool(data['current']['is_day'])
         forecast_days = data['forecast']['forecastday']
 
-        return {
+        result = {
             'last_updated': data['current']['last_updated_epoch'],
             'source': os.getenv('WEATHER_API_SOURCE_NAME'),
             'source_link': os.getenv('WEATHER_API_SOURCE_LINK'),
@@ -120,6 +128,8 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
                 lang_iso=lang_iso
             )
         }
+        cache.set(cache_key, result, CACHE_TTL)
+        return result
 
     except Exception as e:
         print(e)
