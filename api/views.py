@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import os
 import pytz
 import requests
 import json
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,20 +15,45 @@ from rest_framework_api_key.permissions import HasAPIKey
 
 from api.serializers import WeatherDataSerializer
 
-# Create your views here.
+
+class WeatherServiceUnavailableError(Exception):
+    pass
+
+class WeatherServiceError(Exception):
+    MESSAGES = {
+        1002: 'API key not provided.',
+        1003: "Parameter 'q' not provided.",
+        1005: 'API request URL is invalid.',
+        1006: 'No location found matching the provided parameter.',
+        2006: 'API key is invalid.',
+        2007: 'API key has exceeded its monthly call quota.',
+        2008: 'API key has been disabled.',
+        2009: 'API key does not have access to this resource.',
+        9000: 'Invalid JSON body in request.',
+        9001: 'Too many locations in bulk request.',
+        9999: 'Internal weather service error.',
+    }
+
+    def __init__(self, http_status, error_code=None):
+        self.http_status = http_status
+        self.error_code = error_code
+        self.message = self.MESSAGES.get(error_code, 'An unexpected error occurred with the weather service.')
+        super().__init__(self.message)
 
 position_regex = "\-?\d+(\.\d+)?,-?\d+(\.\d+)?"
 ip_address_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
-conditions = []
+CACHE_TTL = int(os.getenv('WEATHER_CACHE_TTL', 3600))
 
-with open("conditions.json", 'r') as f:
+_conditions_path = Path(__file__).resolve().parent.parent / 'conditions.json'
+with open(_conditions_path, 'r') as f:
     conditions = json.load(f)
 
 class WeatherDataView(APIView):
     permission_classes = [HasAPIKey]
     def get(self, request):
         position = request.query_params.get('position')
+        city = request.query_params.get('city')
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         if x_forwarded_for:
             ip_address = x_forwarded_for.split(',')[0]
@@ -35,16 +62,24 @@ class WeatherDataView(APIView):
         lang_iso = request.query_params.get('lang_iso', 'en')
 
         print(f'position: {position}')
+        print(f'city: {city}')
         print(f'lang_iso: {lang_iso}')
         print(f'ip_address: {ip_address}')
-        weather_data = get_current_weather(
-            position=position,
-            ip_address=ip_address,
-            lang_iso=lang_iso,
-        )
-
-        if not weather_data:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
+        try:
+            weather_data = get_current_weather(
+                position=position,
+                city=city,
+                ip_address=ip_address,
+                lang_iso=lang_iso,
+            )
+        except ValueError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except WeatherServiceUnavailableError as e:
+            return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except WeatherServiceError as e:
+            return Response({'error': e.message}, status=e.http_status)
+        except Exception:
+            return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         serializer = WeatherDataSerializer(data=weather_data)
 
@@ -55,7 +90,7 @@ class WeatherDataView(APIView):
 
 
 
-def get_current_weather(position : str = None, ip_address : str = None, lang_iso : str = None):
+def get_current_weather(position : str = None, city: str = None, ip_address : str = None, lang_iso : str = None):
     url = f"{os.getenv('WEATHER_API_BASE_URL')}/forecast.json"
     params = {
         'key': os.getenv('WEATHER_API_KEY'),
@@ -65,30 +100,50 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
     }
     if position and re.match(position_regex, position):
         params['q'] = position
+    elif city and city.strip():
+        params['q'] = city.strip()
     elif ip_address and re.match(ip_address_regex, ip_address):
         params['q'] = ip_address
 
     if params.get('q') is None:
-        return None
+        raise ValueError('No valid position, city or IP address provided')
+
+    cache_key = f"weather_{params['q']}_{lang_iso}"
+    cached = cache.get(cache_key)
+    if cached:
+        return cached
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=10)
+    except requests.exceptions.ConnectionError as e:
+        print(e)
+        raise WeatherServiceUnavailableError('Weather API unreachable')
+    except requests.exceptions.Timeout as e:
+        print(e)
+        raise WeatherServiceUnavailableError('Weather API timed out')
 
-        if response.status_code != 200:
-            return None
+    if response.status_code != 200:
+        error_code = None
+        try:
+            error_code = response.json().get('error', {}).get('code')
+        except Exception:
+            pass
+        print(f'Weather API returned {response.status_code}, error code: {error_code}')
+        raise WeatherServiceError(http_status=response.status_code, error_code=error_code)
 
+    try:
         data = response.json()
         now = get_time_for_timezone(tz_id=data['location']['tz_id'])
 
         if now is None:
-            return None
+            raise WeatherServiceError('Invalid timezone in weather response')
 
         now_hour = now - timedelta(minutes=now.minute, seconds=now.second, microseconds=now.microsecond)
 
         current_is_day = bool(data['current']['is_day'])
         forecast_days = data['forecast']['forecastday']
 
-        return {
+        result = {
             'last_updated': data['current']['last_updated_epoch'],
             'source': os.getenv('WEATHER_API_SOURCE_NAME'),
             'source_link': os.getenv('WEATHER_API_SOURCE_LINK'),
@@ -107,7 +162,7 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
                         lang_iso=lang_iso
                     ),
                     'icon': int(f"{data['current']['condition']['icon'].split('/')[-1].split('.')[0]}"),
-                } ,
+                },
             },
             'next_24h': get_next_24h_forecast(
                 now=now_hour,
@@ -120,10 +175,14 @@ def get_current_weather(position : str = None, ip_address : str = None, lang_iso
                 lang_iso=lang_iso
             )
         }
+        cache.set(cache_key, result, CACHE_TTL)
+        return result
 
+    except (WeatherServiceError, WeatherServiceUnavailableError):
+        raise
     except Exception as e:
         print(e)
-        return None
+        raise
 
 
 

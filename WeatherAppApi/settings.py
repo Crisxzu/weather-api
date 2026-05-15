@@ -29,24 +29,24 @@ DEBUG = bool(int(os.environ.get('DJANGO_DEBUG', '0')))
 DJANGO_HOST = os.environ.get('DJANGO_HOST')
 DJANGO_ORIGIN = os.environ.get('DJANGO_ORIGIN')
 
-
-CORS_ALLOWED_ORIGINS = [
-    f'https://{DJANGO_ORIGIN}',
-    f'https://{DJANGO_HOST}',
-]
-
 if DEBUG:
     ALLOWED_HOSTS = [
         '10.0.2.2', # IP of host on android emulated device
         '127.0.0.1',
         'localhost',
     ]
-    CORS_ALLOWED_ORIGINS.append("http://localhost:8000")
-    CORS_ALLOWED_ORIGINS.append("http://127.0.0.1:8000")
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
 else:
     ALLOWED_HOSTS = [
         DJANGO_HOST,
         DJANGO_ORIGIN
+    ]
+    CORS_ALLOWED_ORIGINS = [
+        f'https://{DJANGO_ORIGIN}',
+        f'https://{DJANGO_HOST}',
     ]
     CSRF_TRUSTED_ORIGINS = [f'https://{DJANGO_ORIGIN}']
     SECURE_HSTS_SECONDS = 31536000
@@ -108,16 +108,40 @@ WSGI_APPLICATION = 'WeatherAppApi.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME'),
-        'USER': os.environ.get('DB_USER'),
-        'PASSWORD': os.environ.get('DB_PASSWORD'),
-        'HOST': os.environ.get('DB_HOST'),
-        'PORT': os.environ.get('DB_PORT'),
+if DEBUG:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME'),
+            'USER': os.environ.get('DB_USER'),
+            'PASSWORD': os.environ.get('DB_PASSWORD'),
+            'HOST': os.environ.get('DB_HOST'),
+            'PORT': os.environ.get('DB_PORT'),
+        }
+    }
+
+# Cache
+REDIS_URL = os.environ.get('REDIS_URL')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': REDIS_URL,
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
