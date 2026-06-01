@@ -27,7 +27,7 @@ class OpenMeteoProvider(WeatherProvider):
     def supports_ip_query(self) -> bool:
         return True
 
-    def get_weather(self, *, position, city, ip_address, lang_iso) -> WeatherData:
+    def get_weather(self, *, position, city, country_code, ip_address, lang_iso) -> WeatherData:
         ip_meta = None
 
         if position:
@@ -37,7 +37,7 @@ class OpenMeteoProvider(WeatherProvider):
             else:
                 raise ValueError('Invalid position format, expected "lat,lon"')
         elif city and city.strip():
-            lat, lon = self._geocode_city(city.strip())
+            lat, lon = self._geocode_city(city.strip(), country_code.strip() if country_code and country_code.strip() else None)
         elif ip_address:
             ip_meta = resolve_ip(ip_address)
             lat, lon = ip_meta.lat, ip_meta.lon
@@ -101,20 +101,26 @@ class OpenMeteoProvider(WeatherProvider):
             next_days=self._build_days(daily, lang_iso),
         )
 
-    def _geocode_city(self, city: str) -> tuple[float, float]:
+    def _geocode_city(self, city: str, country_code: str | None = None) -> tuple[float, float]:
+        params = {'name': city, 'count': 10, 'language': 'en', 'format': 'json'}
         try:
-            resp = requests.get(
-                _GEOCODING_URL,
-                params={'name': city, 'count': 1, 'language': 'en', 'format': 'json'},
-                timeout=5,
-            )
+            resp = requests.get(_GEOCODING_URL, params=params, timeout=5)
         except requests.exceptions.RequestException as e:
             raise WeatherServiceUnavailableError(f'Open-Meteo geocoding unreachable: {e}') from e
 
         if resp.status_code != 200 or not resp.json().get('results'):
             raise WeatherServiceUnavailableError('No location found for city: ' + city)
 
-        result = resp.json()['results'][0]
+        results = resp.json()['results']
+        if country_code:
+            cc = country_code.upper()
+            match = next((r for r in results if r.get('country_code', '').upper() == cc), None)
+            if match is None:
+                raise WeatherServiceUnavailableError(f'No location found for city "{city}" in country "{country_code}"')
+            result = match
+        else:
+            result = results[0]
+
         return float(result['latitude']), float(result['longitude'])
 
     def _reverse_geocode(self, lat: float, lon: float) -> dict:

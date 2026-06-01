@@ -46,7 +46,7 @@ class OpenMeteoProviderHappyPathTests(TestCase):
         forecast = _load_fixture('openmeteo_response.json')
         mock_get.side_effect = _make_requests_get_side_effect(forecast)
         provider = OpenMeteoProvider()
-        result = provider.get_weather(position='48.8566,2.3522', city=None, ip_address=None, lang_iso='en')
+        result = provider.get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
 
         self.assertIsInstance(result, WeatherData)
         self.assertEqual(result.location.lat, 48.8566)
@@ -61,7 +61,7 @@ class OpenMeteoProviderHappyPathTests(TestCase):
     def test_city_query_geocodes_then_fetches(self, mock_ipget, mock_get):
         forecast = _load_fixture('openmeteo_response.json')
         mock_get.side_effect = _make_requests_get_side_effect(forecast)
-        result = OpenMeteoProvider().get_weather(position=None, city='Paris', ip_address=None, lang_iso='en')
+        result = OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')
         self.assertIsInstance(result, WeatherData)
 
     @patch('api.providers.openmeteo.requests.get')
@@ -70,7 +70,7 @@ class OpenMeteoProviderHappyPathTests(TestCase):
         forecast = _load_fixture('openmeteo_response.json')
         mock_get.side_effect = _make_requests_get_side_effect(forecast)
         mock_ipget.return_value = _mock_response(_load_fixture('ipapi_response.json'))
-        result = OpenMeteoProvider().get_weather(position=None, city=None, ip_address='81.2.69.142', lang_iso='en')
+        result = OpenMeteoProvider().get_weather(position=None, city=None, country_code=None, ip_address='81.2.69.142', lang_iso='en')
         self.assertIsInstance(result, WeatherData)
         # Location metadata comes from ip-api, not Nominatim
         self.assertEqual(result.location.name, 'Paris')
@@ -81,7 +81,7 @@ class OpenMeteoProviderHappyPathTests(TestCase):
     def test_condition_text_is_localized(self, mock_ipget, mock_get):
         forecast = _load_fixture('openmeteo_response.json')
         mock_get.side_effect = _make_requests_get_side_effect(forecast)
-        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, ip_address=None, lang_iso='fr')
+        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='fr')
         self.assertIsNotNone(result.current.condition.text)
 
     @patch('api.providers.openmeteo.requests.get')
@@ -89,7 +89,7 @@ class OpenMeteoProviderHappyPathTests(TestCase):
     def test_next_days_has_three_entries(self, mock_ipget, mock_get):
         forecast = _load_fixture('openmeteo_response.json')
         mock_get.side_effect = _make_requests_get_side_effect(forecast)
-        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, ip_address=None, lang_iso='en')
+        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
         self.assertEqual(len(result.next_days), 3)
 
 
@@ -106,7 +106,7 @@ class OpenMeteoProviderNominatimFallbackTests(TestCase):
             return _mock_response(forecast)
 
         mock_get.side_effect = side_effect
-        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, ip_address=None, lang_iso='en')
+        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
         self.assertIsInstance(result, WeatherData)
         self.assertIn('48.8566', result.location.name)
         self.assertEqual(result.location.country, 'Unknown')
@@ -122,33 +122,67 @@ class OpenMeteoProviderNominatimFallbackTests(TestCase):
             return _mock_response(forecast)
 
         mock_get.side_effect = side_effect
-        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, ip_address=None, lang_iso='en')
+        result = OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
         self.assertIsInstance(result, WeatherData)
         self.assertIn('48.8566', result.location.name)
+
+
+class OpenMeteoProviderCountryCodeTests(TestCase):
+
+    @patch('api.providers.openmeteo.requests.get')
+    def test_country_code_selects_matching_result(self, mock_get):
+        forecast = _load_fixture('openmeteo_response.json')
+        mock_get.side_effect = _make_requests_get_side_effect(
+            forecast,
+            geocoding=_load_fixture('openmeteo_geocoding_ambiguous_response.json'),
+        )
+        result = OpenMeteoProvider().get_weather(position=None, city='San Jose', country_code='CR', ip_address=None, lang_iso='en')
+        self.assertAlmostEqual(result.location.lat, 9.9333)
+        self.assertAlmostEqual(result.location.lon, -84.0833)
+
+    @patch('api.providers.openmeteo.requests.get')
+    def test_country_code_us_selects_california(self, mock_get):
+        forecast = _load_fixture('openmeteo_response.json')
+        mock_get.side_effect = _make_requests_get_side_effect(
+            forecast,
+            geocoding=_load_fixture('openmeteo_geocoding_ambiguous_response.json'),
+        )
+        result = OpenMeteoProvider().get_weather(position=None, city='San Jose', country_code='US', ip_address=None, lang_iso='en')
+        self.assertAlmostEqual(result.location.lat, 37.3382)
+        self.assertAlmostEqual(result.location.lon, -121.8863)
+
+    @patch('api.providers.openmeteo.requests.get')
+    def test_unknown_country_code_raises_unavailable_error(self, mock_get):
+        mock_get.side_effect = _make_requests_get_side_effect(
+            {},
+            geocoding=_load_fixture('openmeteo_geocoding_ambiguous_response.json'),
+        )
+        with self.assertRaises(WeatherServiceUnavailableError):
+            OpenMeteoProvider().get_weather(position=None, city='San Jose', country_code='JP', ip_address=None, lang_iso='en')
 
 
 class OpenMeteoProviderErrorTests(TestCase):
 
     def test_no_query_raises_value_error(self):
         with self.assertRaises(ValueError):
-            OpenMeteoProvider().get_weather(position=None, city=None, ip_address=None, lang_iso='en')
+            OpenMeteoProvider().get_weather(position=None, city=None, country_code=None, ip_address=None, lang_iso='en')
 
     def test_invalid_position_format_raises_value_error(self):
         with self.assertRaises(ValueError):
-            OpenMeteoProvider().get_weather(position='not-valid', city=None, ip_address=None, lang_iso='en')
+            OpenMeteoProvider().get_weather(position='not-valid', city=None, country_code=None, ip_address=None, lang_iso='en')
 
     @patch('api.providers.openmeteo.requests.get')
     def test_geocoding_failure_raises_unavailable_error(self, mock_get):
         mock_get.return_value = _mock_response({'results': []})
         with self.assertRaises(WeatherServiceUnavailableError):
-            OpenMeteoProvider().get_weather(position=None, city='UnknownCity', ip_address=None, lang_iso='en')
+            OpenMeteoProvider().get_weather(position=None, city='UnknownCity', country_code=None, ip_address=None, lang_iso='en')
 
     @patch('api.providers.openmeteo.requests.get')
     def test_geocoding_connection_error_raises_unavailable_error(self, mock_get):
         import requests as req
         mock_get.side_effect = req.exceptions.ConnectionError
         with self.assertRaises(WeatherServiceUnavailableError):
-            OpenMeteoProvider().get_weather(position=None, city='Paris', ip_address=None, lang_iso='en')
+            OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')
 
     @patch('api.providers.openmeteo.requests.get')
     @patch('api.utils.ip_geolocation.requests.get')
@@ -162,4 +196,4 @@ class OpenMeteoProviderErrorTests(TestCase):
 
         mock_get.side_effect = side_effect
         with self.assertRaises(WeatherServiceUnavailableError):
-            OpenMeteoProvider().get_weather(position=None, city='Paris', ip_address=None, lang_iso='en')
+            OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')

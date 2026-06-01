@@ -24,7 +24,7 @@ class WeatherAPIProvider(WeatherProvider):
     def supports_ip_query(self) -> bool:
         return True
 
-    def get_weather(self, *, position, city, ip_address, lang_iso) -> WeatherData:
+    def get_weather(self, *, position, city, country_code, ip_address, lang_iso) -> WeatherData:
         url = f"{os.getenv('WEATHER_API_BASE_URL')}/forecast.json"
         params = {
             'key': os.getenv('WEATHER_API_KEY'),
@@ -36,7 +36,7 @@ class WeatherAPIProvider(WeatherProvider):
         if position and re.match(_position_regex, position):
             params['q'] = position
         elif city and city.strip():
-            params['q'] = city.strip()
+            params['q'] = f"{city.strip()},{country_code.strip()}" if country_code and country_code.strip() else city.strip()
         elif ip_address and re.match(_ip_regex, ip_address):
             params['q'] = ip_address
 

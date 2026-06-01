@@ -23,13 +23,14 @@ class WeatherDataView(APIView):
     def get(self, request):
         position = request.query_params.get('position')
         city = request.query_params.get('city')
+        country_code = request.query_params.get('country_code')
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
         ip_address = x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
         lang_iso = request.query_params.get('lang_iso', 'en')
 
-        logger.debug('Incoming request — position=%s city=%s ip=%s lang=%s', position, city, ip_address, lang_iso)
+        logger.debug('Incoming request — position=%s city=%s country_code=%s ip=%s lang=%s', position, city, country_code, ip_address, lang_iso)
 
-        query_key = position or city or ip_address or 'unknown'
+        query_key = position or (f'{city},{country_code}' if city and country_code else city) or ip_address or 'unknown'
         cache_key = f'weather_{query_key}_{lang_iso}'
 
         cached = cache.get(cache_key)
@@ -39,7 +40,7 @@ class WeatherDataView(APIView):
 
         logger.info('Cache miss for key=%s — fetching from provider', cache_key)
 
-        query_kwargs = dict(position=position, city=city, ip_address=ip_address, lang_iso=lang_iso)
+        query_kwargs = dict(position=position, city=city, country_code=country_code, ip_address=ip_address, lang_iso=lang_iso)
 
         try:
             weather_data = self._fetch_with_fallback(query_kwargs)

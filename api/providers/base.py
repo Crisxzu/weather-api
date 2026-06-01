@@ -32,7 +32,7 @@ class WeatherServiceError(Exception):
 class WeatherProvider(ABC):
 
     @abstractmethod
-    def get_weather(self, *, position: str | None, city: str | None, ip_address: str | None, lang_iso: str) -> WeatherData:
+    def get_weather(self, *, position: str | None, city: str | None, country_code: str | None, ip_address: str | None, lang_iso: str) -> WeatherData:
         """
         Fetch weather data and return a normalized dict matching WeatherDataSerializer.
 

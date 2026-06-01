@@ -1,0 +1,22 @@
+{
+  "results": [
+    {
+      "id": 5392171,
+      "name": "San Jose",
+      "latitude": 37.3382,
+      "longitude": -121.8863,
+      "country": "United States",
+      "country_code": "US",
+      "admin1": "California"
+    },
+    {
+      "id": 3621849,
+      "name": "San Jose",
+      "latitude": 9.9333,
+      "longitude": -84.0833,
+      "country": "Costa Rica",
+      "country_code": "CR",
+      "admin1": "San José"
+    }
+  ]
+}
