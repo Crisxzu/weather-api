@@ -1,0 +1,112 @@
+{
+  "location": {
+    "name": "Paris",
+    "region": "Ile-de-France",
+    "country": "France",
+    "lat": 48.8566,
+    "lon": 2.3522,
+    "tz_id": "Europe/Paris",
+    "localtime_epoch": 1748772000,
+    "localtime": "2025-06-01 12:00"
+  },
+  "current": {
+    "last_updated_epoch": 1748771400,
+    "last_updated": "2025-06-01 11:45",
+    "temp_c": 18.0,
+    "feelslike_c": 17.2,
+    "is_day": 1,
+    "condition": {
+      "text": "Sunny",
+      "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
+      "code": 1000
+    },
+    "humidity": 62
+  },
+  "forecast": {
+    "forecastday": [
+      {
+        "date": "2025-06-01",
+        "date_epoch": 1748736000,
+        "day": {
+          "maxtemp_c": 23.5,
+          "mintemp_c": 12.1,
+          "avghumidity": 58,
+          "condition": {
+            "text": "Sunny",
+            "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
+            "code": 1000
+          }
+        },
+        "hour": [
+          {
+            "time_epoch": 1748736000,
+            "time": "2025-06-01 00:00",
+            "temp_c": 13.2,
+            "is_day": 0,
+            "humidity": 74,
+            "condition": {
+              "text": "Clear",
+              "icon": "//cdn.weatherapi.com/weather/64x64/night/113.png",
+              "code": 1000
+            }
+          },
+          {
+            "time_epoch": 1748772000,
+            "time": "2025-06-01 10:00",
+            "temp_c": 18.0,
+            "is_day": 1,
+            "humidity": 62,
+            "condition": {
+              "text": "Sunny",
+              "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
+              "code": 1000
+            }
+          }
+        ]
+      },
+      {
+        "date": "2025-06-02",
+        "date_epoch": 1748822400,
+        "day": {
+          "maxtemp_c": 21.0,
+          "mintemp_c": 11.5,
+          "avghumidity": 65,
+          "condition": {
+            "text": "Partly Cloudy",
+            "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png",
+            "code": 1003
+          }
+        },
+        "hour": [
+          {
+            "time_epoch": 1748822400,
+            "time": "2025-06-02 00:00",
+            "temp_c": 12.0,
+            "is_day": 0,
+            "humidity": 70,
+            "condition": {
+              "text": "Clear",
+              "icon": "//cdn.weatherapi.com/weather/64x64/night/113.png",
+              "code": 1000
+            }
+          }
+        ]
+      },
+      {
+        "date": "2025-06-03",
+        "date_epoch": 1748908800,
+        "day": {
+          "maxtemp_c": 19.5,
+          "mintemp_c": 10.8,
+          "avghumidity": 70,
+          "condition": {
+            "text": "Cloudy",
+            "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png",
+            "code": 1006
+          }
+        },
+        "hour": []
+      }
+    ]
+  }
+}
