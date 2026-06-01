@@ -1,5 +1,7 @@
 # Weather API Service
 
+[![Tests](https://github.com/Crisxzu/weather-api/actions/workflows/tests.yml/badge.svg)](https://github.com/Crisxzu/weather-api/actions/workflows/tests.yml)
+
 API Django REST Framework fournissant des données météorologiques actuelles et des prévisions, basées sur des coordonnées géographiques, un nom de ville ou l'adresse IP du client.
 
 ## Fonctionnalités
