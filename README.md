@@ -1,83 +1,103 @@
 # Weather API Service
 
-Ce projet est une API Django REST Framework qui fournit des données météorologiques actuelles et des prévisions basées sur la position géographique ou l'adresse IP de l'utilisateur.
+API Django REST Framework fournissant des données météorologiques actuelles et des prévisions, basées sur des coordonnées géographiques, un nom de ville ou l'adresse IP du client.
 
 ## Fonctionnalités
 
-- Récupération des données météorologiques actuelles
-- Prévisions pour les prochaines 24 heures
-- Prévisions pour les prochains jours
-- Support multilingue pour les descriptions des conditions météorologiques
-- Localisation par coordonnées géographiques ou adresse IP
+- Conditions météo actuelles + prévisions 24h et multi-jours
+- Support multilingue des descriptions de conditions (`lang_iso`)
+- Localisation par coordonnées, ville ou adresse IP
+- Architecture multi-providers avec fallback automatique
+- Cache Redis (production) ou mémoire (développement)
+- Authentification par clé API
 
 ## Prérequis
 
 - Python 3.10+
 - Django 4.2+
 - Django REST Framework 3.16+
-- Autres dépendances listées dans `requirements.txt`
 
 ## Installation
 
-1. Clonez le dépôt:
+1. Clonez le dépôt :
    ```bash
    git clone https://github.com/Crisxzu/weather-api.git
    cd weather-api
    ```
 
-2. Créez un environnement virtuel et activez-le:
+2. Créez un environnement virtuel et activez-le :
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # Sur Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate  # Windows : .venv\Scripts\activate
    ```
 
-3. Installez les dépendances:
+3. Installez les dépendances :
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Créez un fichier `.env` à la racine du projet avec les variables suivantes:
-   ```
-   WEATHER_API_KEY=votre_clé_api_météo
-   WEATHER_API_BASE_URL=url_de_base_de_l_api_météo
-   WEATHER_API_SOURCE_NAME=nom_de_la_source
-   WEATHER_API_SOURCE_LINK=lien_vers_la_source
-   DJANGO_SECRET_KEY=votre_clé_secrète_django
+4. Créez un fichier `.env` à la racine du projet :
+   ```env
+   # WeatherAPI (provider principal)
+   WEATHER_API_KEY=votre_clé_api
+   WEATHER_API_BASE_URL=http://api.weatherapi.com/v1
+   WEATHER_API_SOURCE_NAME="Weather API"
+   WEATHER_API_SOURCE_LINK="https://www.weatherapi.com/"
+
+   # Providers
+   WEATHER_PRIMARY_PROVIDER=weatherapi
+   WEATHER_FALLBACK_PROVIDER=openmeteo
+
+   # Django
+   DJANGO_SECRET_KEY=votre_clé_secrète
+   DJANGO_DEBUG=1
+
+   # Cache (optionnel — LocMemCache si absent)
+   REDIS_URL=redis://localhost:6379/0
+   WEATHER_CACHE_TTL=3600
    ```
 
-5. Effectuez les migrations:
+5. Effectuez les migrations :
    ```bash
    python manage.py migrate
    ```
 
-6. Lancez le serveur de développement:
+6. Créez une clé API :
+   ```bash
+   python manage.py create_api_key --name "nom-de-la-clé"
+   ```
+
+7. Lancez le serveur :
    ```bash
    python manage.py runserver
    ```
 
 ## Utilisation
 
-### Endpoint principal
+### Endpoint
 
 ```
-GET /api/weather/
+GET /api/weather
 ```
 
-### Paramètres de requête
+**Authentification :** header `Authorization: Api-Key <votre_clé>`
 
-| Paramètre | Description                                                 | Exemple          |
-|-----------|-------------------------------------------------------------|------------------|
-| position  | Coordonnées géographiques (latitude,longitude)              | `48.8566,2.3522` |
-| lang_iso  | Code de langue ISO pour les descriptions (par défaut: 'en') | `fr`             |
+### Paramètres
 
-Si aucune position n'est fournie, l'API tentera d'utiliser l'adresse IP du client pour déterminer sa localisation.
+| Paramètre  | Description                                    | Exemple          |
+|------------|------------------------------------------------|------------------|
+| `position` | Coordonnées `latitude,longitude`               | `48.8566,2.3522` |
+| `city`     | Nom de la ville                                | `Paris`          |
+| `lang_iso` | Code langue ISO pour les conditions (défaut: `en`) | `fr`         |
+
+Si aucun paramètre n'est fourni, l'API utilise l'adresse IP du client. Les paramètres sont prioritaires dans l'ordre : `position` > `city` > IP.
 
 ### Exemple de réponse
 
 ```json
 {
-  "last_updated": 1615970400,
-  "source": "WeatherAPI.com",
+  "last_updated": 1748771400,
+  "source": "Weather API",
   "source_link": "https://www.weatherapi.com/",
   "location": {
     "name": "Paris",
@@ -86,88 +106,112 @@ Si aucune position n'est fournie, l'API tentera d'utiliser l'adresse IP du clien
     "lat": 48.86,
     "lon": 2.35,
     "tz_id": "Europe/Paris",
-    "localtime_epoch": 1615970700,
-    "localtime": "2021-03-17 10:45"
+    "localtime_epoch": 1748772000,
+    "localtime": "2025-06-01 12:00"
   },
   "current": {
-    "temp": 12.0,
-    "min_temp": 8.5,
-    "max_temp": 15.2,
-    "is_day": 1,
-    "feels_like": 10.3,
+    "temp": 18.0,
+    "min_temp": 12.1,
+    "max_temp": 23.5,
+    "is_day": true,
+    "feels_like": 17.2,
     "condition": {
       "code": 1000,
-      "text": "Ensoleillé"
+      "text": "Ensoleillé",
+      "icon": 113
     }
   },
   "next_24h": [
     {
-      "temp": 12.0,
-      "humidity": 75,
-      "timestamp": 1615971600,
+      "temp": 19.5,
+      "humidity": 60,
+      "timestamp": 1748775600,
+      "is_day": true,
       "condition": {
         "code": 1000,
-        "text": "Ensoleillé"
+        "text": "Ensoleillé",
+        "icon": 113
       }
-    },
-    // ... autres heures
+    }
   ],
   "next_days": [
     {
-      "min_temp": 8.5,
-      "max_temp": 15.2,
-      "humidity": 78,
-      "timestamp": 1615939200,
+      "min_temp": 12.1,
+      "max_temp": 23.5,
+      "humidity": 58,
+      "timestamp": 1748736000,
+      "is_day": true,
       "condition": {
         "code": 1000,
-        "text": "Ensoleillé"
+        "text": "Ensoleillé",
+        "icon": 113
       }
-    },
-    // ... autres jours
+    }
   ]
 }
 ```
 
+### Codes d'erreur
+
+| HTTP | Cas |
+|------|-----|
+| `400` | Paramètres invalides ou localisation introuvable |
+| `403` | Clé API manquante ou invalide |
+| `503` | Provider météo indisponible (et fallback aussi en échec) |
+
+## Architecture multi-providers
+
+L'API supporte plusieurs sources météo configurables via les variables d'environnement `WEATHER_PRIMARY_PROVIDER` et `WEATHER_FALLBACK_PROVIDER`.
+
+| Provider | Valeur | Gratuit | Clé requise | Source des données |
+|----------|--------|---------|-------------|-------------------|
+| WeatherAPI | `weatherapi` | 100k req/mois | Oui | WeatherAPI.com |
+| Open-Meteo | `openmeteo` | 300k req/mois (non-commercial) | Non | Open-Meteo.com |
+
+**Logique de fallback :** si le provider principal retourne une erreur réseau ou de timeout, le fallback prend le relais automatiquement. Les erreurs déterministes (clé invalide, quota dépassé) ne déclenchent pas le fallback.
+
+### Services tiers utilisés par Open-Meteo
+
+- **Open-Meteo Geocoding API** — résolution ville → coordonnées
+- **ip-api.com** — résolution IP → coordonnées (requêtes IP uniquement)
+- **Nominatim (OpenStreetMap)** — reverse geocoding coordonnées → nom de ville
+
 ## Structure du projet
 
 ```
-weather-api-/
+WeatherAppApi/
 ├── api/
-│   ├── __init__.py
-│   ├── asgi.py
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
-├── WeatherAppApi/
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── apps.py
-│   ├── migrations/
-│   ├── models.py
+│   ├── providers/
+│   │   ├── base.py          # WeatherProvider (ABC) + exceptions
+│   │   ├── weatherapi.py    # WeatherAPIProvider
+│   │   ├── openmeteo.py     # OpenMeteoProvider
+│   │   ├── registry.py      # Sélection primary/fallback via env vars
+│   │   └── schemas.py       # Dataclasses du contrat de données
+│   ├── utils/
+│   │   ├── conditions.py    # Lookup conditions + mapping WMO
+│   │   ├── timezone.py      # Helper timezone
+│   │   └── ip_geolocation.py # Résolution IP → coordonnées
+│   ├── tests/
+│   │   ├── fixtures/        # Réponses mock JSON pour les tests
+│   │   ├── test_utils.py
+│   │   ├── test_weatherapi.py
+│   │   ├── test_openmeteo.py
+│   │   └── test_views.py
 │   ├── serializers.py
-│   ├── tests.py
 │   └── views.py
-├── conditions.json
-├── .env
-├── .gitignore
+├── conditions.json           # Codes conditions + traductions (20+ langues)
+├── wmo_conditions.json       # Mapping codes WMO → codes internes
 ├── manage.py
 └── requirements.txt
 ```
 
-## Fichier conditions.json
+## Tests
 
-Le fichier `conditions.json` contient les mappages des codes de condition météorologique vers leurs descriptions textuelles dans différentes langues. Il doit être placé à la racine du projet.
+```bash
+python manage.py test api.tests
+```
 
-## Développement
-
-### Utilisation des serializers
-
-Le projet utilise les serializers de Django REST Framework pour valider et structurer les données. Les serializers sont définis dans `api/serializers.py`.
-
-### Ajout de nouvelles fonctionnalités
-
-1. Pour ajouter de nouveaux endpoints, créez de nouvelles classes de vues dans `views.py` et ajoutez-les aux URLs.
-2. Pour modifier la structure des données, mettez à jour les serializers appropriés.
+49 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification).
 
 ## Licence
 
@@ -179,4 +223,5 @@ Chris Kouassi
 
 ## Crédits
 
-Ce projet utilise les données de [WeatherAPI](https://www.weatherapi.com/), accessible via leur API.
+- Données météo principales : [WeatherAPI](https://www.weatherapi.com/)
+- Données météo fallback : [Open-Meteo](https://open-meteo.com/)
