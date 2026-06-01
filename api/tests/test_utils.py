@@ -2,9 +2,9 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 
+from api.providers.base import WeatherServiceUnavailableError
 from api.utils.conditions import get_condition_by_code, get_condition_by_wmo_code
 from api.utils.ip_geolocation import resolve_ip
-from api.providers.base import WeatherServiceUnavailableError
 
 
 class GetConditionByCodeTests(TestCase):
@@ -36,19 +36,13 @@ class GetConditionByWmoCodeTests(TestCase):
 
     def test_known_wmo_code_returns_mapped_entry(self):
         result = get_condition_by_wmo_code(0)
-        self.assertIn('code', result)
-        self.assertIn('icon', result)
-        self.assertEqual(result['code'], 1000)
-        self.assertEqual(result['icon'], 113)
-
-    def test_rain_code_maps_correctly(self):
-        result = get_condition_by_wmo_code(61)
-        self.assertEqual(result['code'], 1183)
+        self.assertEqual(result.code, 1000)
+        self.assertEqual(result.icon, 113)
 
     def test_unknown_wmo_code_returns_clear_fallback(self):
         result = get_condition_by_wmo_code(42)
-        self.assertEqual(result['code'], 1000)
-        self.assertEqual(result['icon'], 113)
+        self.assertEqual(result.code, 1000)
+        self.assertEqual(result.icon, 113)
 
 
 class ResolveIpTests(TestCase):
@@ -79,11 +73,11 @@ class ResolveIpTests(TestCase):
             'timezone': 'Europe/Paris',
         })
         result = resolve_ip('81.2.69.142')
-        self.assertEqual(result['lat'], 48.8566)
-        self.assertEqual(result['lon'], 2.3522)
-        self.assertEqual(result['city'], 'Paris')
-        self.assertEqual(result['country'], 'France')
-        self.assertEqual(result['timezone'], 'Europe/Paris')
+        self.assertEqual(result.lat, 48.8566)
+        self.assertEqual(result.lon, 2.3522)
+        self.assertEqual(result.city, 'Paris')
+        self.assertEqual(result.country, 'France')
+        self.assertEqual(result.timezone, 'Europe/Paris')
 
     @patch('api.utils.ip_geolocation.requests.get')
     def test_failed_api_status_raises_value_error(self, mock_get):

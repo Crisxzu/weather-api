@@ -1,8 +1,15 @@
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class WMOCondition:
+    code: int
+    icon: int
 
 _root = Path(__file__).resolve().parent.parent.parent
 
@@ -27,9 +34,9 @@ def get_condition_by_code(code: int, is_day: bool, lang_iso: str = None) -> str 
     return None
 
 
-def get_condition_by_wmo_code(wmo_code: int) -> dict:
+def get_condition_by_wmo_code(wmo_code: int) -> WMOCondition:
     entry = _wmo_conditions.get(str(wmo_code))
     if entry is None:
         logger.warning('Unknown WMO code %s, falling back to Clear', wmo_code)
-        return {'code': 1000, 'icon': 113}
-    return {'code': entry['code'], 'icon': entry['icon']}
+        return WMOCondition(code=1000, icon=113)
+    return WMOCondition(code=entry['code'], icon=entry['icon'])

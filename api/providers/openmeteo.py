@@ -40,7 +40,7 @@ class OpenMeteoProvider(WeatherProvider):
             lat, lon = self._geocode_city(city.strip())
         elif ip_address:
             ip_meta = resolve_ip(ip_address)
-            lat, lon = ip_meta['lat'], ip_meta['lon']
+            lat, lon = ip_meta.lat, ip_meta.lon
         else:
             raise ValueError('No valid position, city or IP address provided')
 
@@ -55,9 +55,9 @@ class OpenMeteoProvider(WeatherProvider):
         now_epoch = int(now.timestamp())
 
         if ip_meta:
-            loc_name = ip_meta.get('city') or f'{lat},{lon}'
-            loc_region = ip_meta.get('region', '')
-            loc_country = ip_meta.get('country') or 'Unknown'
+            loc_name = ip_meta.city or f'{lat},{lon}'
+            loc_region = ip_meta.region
+            loc_country = ip_meta.country or 'Unknown'
         else:
             geo = self._reverse_geocode(lat, lon)
             loc_name = geo['name']
@@ -92,9 +92,9 @@ class OpenMeteoProvider(WeatherProvider):
                 is_day=is_day,
                 feels_like=current['apparent_temperature'],
                 condition=Condition(
-                    code=mapped['code'],
-                    text=get_condition_by_code(mapped['code'], is_day, lang_iso),
-                    icon=mapped['icon'],
+                    code=mapped.code,
+                    text=get_condition_by_code(mapped.code, is_day, lang_iso),
+                    icon=mapped.icon,
                 ),
             ),
             next_24h=self._build_24h(now_hour, hourly, lang_iso),
@@ -179,9 +179,9 @@ class OpenMeteoProvider(WeatherProvider):
                     timestamp=ts,
                     is_day=is_day,
                     condition=Condition(
-                        code=mapped['code'],
-                        text=get_condition_by_code(mapped['code'], is_day, lang_iso),
-                        icon=mapped['icon'],
+                        code=mapped.code,
+                        text=get_condition_by_code(mapped.code, is_day, lang_iso),
+                        icon=mapped.icon,
                     ),
                 ))
         return result
@@ -198,9 +198,9 @@ class OpenMeteoProvider(WeatherProvider):
                 timestamp=ts,
                 is_day=True,
                 condition=Condition(
-                    code=mapped['code'],
-                    text=get_condition_by_code(mapped['code'], True, lang_iso),
-                    icon=mapped['icon'],
+                    code=mapped.code,
+                    text=get_condition_by_code(mapped.code, True, lang_iso),
+                    icon=mapped.icon,
                 ),
             ))
         return result

@@ -1,7 +1,18 @@
 import logging
 import re
+from dataclasses import dataclass
 
 import requests
+
+
+@dataclass
+class IPGeolocationResult:
+    lat: float
+    lon: float
+    city: str
+    region: str
+    country: str
+    timezone: str
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +24,7 @@ _private_ip_regex = re.compile(
 )
 
 
-def resolve_ip(ip_address: str) -> dict:
+def resolve_ip(ip_address: str) -> IPGeolocationResult:
     """
     Resolves an IP address to geographic coordinates and location metadata.
 
@@ -44,11 +55,11 @@ def resolve_ip(ip_address: str) -> dict:
     if data.get('status') != 'success':
         raise ValueError(f'Unable to geolocate IP address {ip_address}')
 
-    return {
-        'lat': float(data['lat']),
-        'lon': float(data['lon']),
-        'city': data.get('city', ''),
-        'region': data.get('regionName', ''),
-        'country': data.get('country', ''),
-        'timezone': data.get('timezone', ''),
-    }
+    return IPGeolocationResult(
+        lat=float(data['lat']),
+        lon=float(data['lon']),
+        city=data.get('city', ''),
+        region=data.get('regionName', ''),
+        country=data.get('country', ''),
+        timezone=data.get('timezone', ''),
+    )
