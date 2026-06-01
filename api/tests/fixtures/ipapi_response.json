@@ -1,0 +1,9 @@
+{
+  "status": "success",
+  "lat": 48.8566,
+  "lon": 2.3522,
+  "city": "Paris",
+  "regionName": "Ile-de-France",
+  "country": "France",
+  "timezone": "Europe/Paris"
+}
