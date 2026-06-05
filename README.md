@@ -86,13 +86,19 @@ GET /api/weather
 
 ### Paramètres
 
-| Paramètre  | Description                                    | Exemple          |
-|------------|------------------------------------------------|------------------|
-| `position` | Coordonnées `latitude,longitude`               | `48.8566,2.3522` |
-| `city`     | Nom de la ville                                | `Paris`          |
-| `lang_iso` | Code langue ISO pour les conditions (défaut: `en`) | `fr`         |
+| Paramètre      | Description                                          | Exemple          |
+|----------------|------------------------------------------------------|------------------|
+| `position`     | Coordonnées `latitude,longitude`                     | `48.8566,2.3522` |
+| `city`         | Nom de la ville                                      | `Paris`          |
+| `country_code` | Code pays ISO 3166-1 alpha-2 pour lever l'ambiguïté entre des villes homonymes (optionnel, utilisé avec `city`) | `FR` |
+| `lang_iso`     | Code langue ISO pour les conditions (défaut: `en`)   | `fr`             |
 
 Si aucun paramètre n'est fourni, l'API utilise l'adresse IP du client. Les paramètres sont prioritaires dans l'ordre : `position` > `city` > IP.
+
+**Exemple avec `country_code` :**
+```
+GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
+```
 
 ### Exemple de réponse
 
@@ -213,7 +219,7 @@ WeatherAppApi/
 python manage.py test api.tests
 ```
 
-49 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification).
+54 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`).
 
 ## Licence
 
