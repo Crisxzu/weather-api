@@ -40,15 +40,16 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 
 4. Créez un fichier `.env` à la racine du projet :
    ```env
-   # WeatherAPI (provider principal)
+   # WeatherAPI (provider de secours)
    WEATHER_API_KEY=votre_clé_api
    WEATHER_API_BASE_URL=http://api.weatherapi.com/v1
    WEATHER_API_SOURCE_NAME="Weather API"
    WEATHER_API_SOURCE_LINK="https://www.weatherapi.com/"
 
    # Providers
-   WEATHER_PRIMARY_PROVIDER=weatherapi
-   WEATHER_FALLBACK_PROVIDER=openmeteo
+   WEATHER_PRIMARY_PROVIDER=openmeteo
+   WEATHER_FALLBACK_PROVIDER=weatherapi
+   WEATHER_FORECAST_DAYS=3          # 1 à 16 (WeatherAPI peut en renvoyer moins selon le plan)
 
    # Django
    DJANGO_SECRET_KEY=votre_clé_secrète
@@ -57,6 +58,14 @@ API Django REST Framework fournissant des données météorologiques actuelles e
    # Cache (optionnel — LocMemCache si absent)
    REDIS_URL=redis://localhost:6379/0
    WEATHER_CACHE_TTL=3600
+   WEATHER_NOWCAST_CACHE_TTL=900    # TTL quand la réponse contient next_minutes
+
+   # Alertes météo (récupérées à part si le provider n'en fournit pas)
+   WEATHER_ALERTS_PROVIDER=weatherapi   # vide = désactivé
+   WEATHER_ALERTS_CACHE_TTL=1800
+
+   # Nominatim (reverse geocoding Open-Meteo) — User-Agent identifiable exigé
+   NOMINATIM_USER_AGENT="WeatherAppApi/1.0 (+https://github.com/Crisxzu/weather-api)"
    ```
 
 5. Effectuez les migrations :
@@ -88,7 +97,7 @@ GET /api/weather
 
 | Paramètre      | Description                                          | Exemple          |
 |----------------|------------------------------------------------------|------------------|
-| `position`     | Coordonnées `latitude,longitude`                     | `48.8566,2.3522` |
+| `position`     | Coordonnées `latitude,longitude`, arrondies à 2 décimales (~1 km) avant cache et appel au provider | `48.8566,2.3522` |
 | `city`         | Nom de la ville                                      | `Paris`          |
 | `country_code` | Code pays ISO 3166-1 alpha-2 pour lever l'ambiguïté entre des villes homonymes (optionnel, utilisé avec `city`) | `FR` |
 | `lang_iso`     | Code langue ISO pour les conditions (défaut: `en`)   | `fr`             |
@@ -127,7 +136,13 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
       "code": 1000,
       "text": "Ensoleillé",
       "icon": 113
-    }
+    },
+    "humidity": 62,
+    "wind_kph": 14.4,
+    "wind_degree": 250,
+    "gust_kph": 22.3,
+    "uv": 6.0,
+    "precip_mm": 0.0
   },
   "next_24h": [
     {
@@ -139,7 +154,13 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
         "code": 1000,
         "text": "Ensoleillé",
         "icon": 113
-      }
+      },
+      "chance_of_rain": 20,
+      "chance_of_snow": null,
+      "precip_mm": 0.1,
+      "feels_like": 18.7,
+      "wind_kph": 13.0,
+      "uv": 6.0
     }
   ],
   "next_days": [
@@ -153,11 +174,35 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
         "code": 1000,
         "text": "Ensoleillé",
         "icon": 113
-      }
+      },
+      "chance_of_rain": 10,
+      "chance_of_snow": null,
+      "total_precip_mm": 0.0,
+      "max_wind_kph": 18.0,
+      "uv": 7.0,
+      "sunrise": 1748749620,
+      "sunset": 1748807400
     }
-  ]
+  ],
+  "next_minutes": [
+    { "timestamp": 1748772000, "precip_mm": 0.0 },
+    { "timestamp": 1748772900, "precip_mm": 0.4 }
+  ],
+  "alerts": []
 }
 ```
+
+### Champs v2
+
+Tous les champs ajoutés pour la v2 sont **nullables** : un provider qui ne sait pas fournir une valeur renvoie `null`. Les clients v1 ignorent ces clés.
+
+- Températures en °C, vent en km/h, précipitations en mm, probabilités en %, timestamps en epoch secondes.
+- `next_days[].timestamp` vaut minuit **UTC** de la date (même convention pour les deux providers). `sunrise` / `sunset` sont de vrais instants.
+- `next_days` peut contenir **moins** de jours que `WEATHER_FORECAST_DAYS` (le plan WeatherAPI limite le nombre de jours) : la longueur est variable.
+- `chance_of_snow` vaut `null` avec Open-Meteo (pas de probabilité de neige).
+- `next_minutes` : précipitations par pas de 15 min sur les 2 prochaines heures. `null` avec WeatherAPI. Données réellement au quart d'heure seulement en Europe centrale et Amérique du Nord, ailleurs interpolées depuis l'horaire : à présenter avec prudence.
+- `alerts` : `[]` = aucune alerte en cours, `null` = alertes indisponibles (service désactivé ou en échec). Chaque alerte : `event`, `headline`, `severity`, `effective`, `expires`.
+  Quand le provider qui a répondu n'a pas d'alertes (Open-Meteo), elles sont demandées à part à l'endpoint `alerts.json` de WeatherAPI, avec leur propre cache (par zone de ~1 km, toutes langues confondues, `WEATHER_ALERTS_CACHE_TTL`). Un échec n'affecte pas la réponse météo. La couverture dépend des pays (bonne aux États-Unis et en Europe) : `[]` ne garantit pas l'absence d'alerte officielle partout.
 
 ### Codes d'erreur
 
@@ -173,8 +218,10 @@ L'API supporte plusieurs sources météo configurables via les variables d'envir
 
 | Provider | Valeur | Gratuit | Clé requise | Source des données |
 |----------|--------|---------|-------------|-------------------|
+| Open-Meteo | `openmeteo` | ~10k req/jour (non-commercial, CC BY 4.0) | Non | Open-Meteo.com |
 | WeatherAPI | `weatherapi` | 100k req/mois | Oui | WeatherAPI.com |
-| Open-Meteo | `openmeteo` | 300k req/mois (non-commercial) | Non | Open-Meteo.com |
+
+Configuration recommandée : Open-Meteo en principal (prévisions jusqu'à 16 jours, pluie au quart d'heure), WeatherAPI en secours. Les alertes viennent toujours de WeatherAPI (`WEATHER_ALERTS_PROVIDER`), ce qui garde la clé WeatherAPI nécessaire.
 
 **Logique de fallback :** si le provider principal retourne une erreur réseau ou de timeout, le fallback prend le relais automatiquement. Les erreurs déterministes (clé invalide, quota dépassé) ne déclenchent pas le fallback.
 
@@ -194,6 +241,7 @@ WeatherAppApi/
 │   │   ├── weatherapi.py    # WeatherAPIProvider
 │   │   ├── openmeteo.py     # OpenMeteoProvider
 │   │   ├── registry.py      # Sélection primary/fallback via env vars
+│   │   ├── alerts.py        # Alertes WeatherAPI quand le provider n'en a pas
 │   │   └── schemas.py       # Dataclasses du contrat de données
 │   ├── utils/
 │   │   ├── conditions.py    # Lookup conditions + mapping WMO
@@ -204,6 +252,7 @@ WeatherAppApi/
 │   │   ├── test_utils.py
 │   │   ├── test_weatherapi.py
 │   │   ├── test_openmeteo.py
+│   │   ├── test_alerts.py
 │   │   └── test_views.py
 │   ├── serializers.py
 │   └── views.py
@@ -219,7 +268,7 @@ WeatherAppApi/
 python manage.py test api.tests
 ```
 
-54 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`).
+101 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes).
 
 ## Licence
 
@@ -231,5 +280,5 @@ Chris Kouassi
 
 ## Crédits
 
-- Données météo principales : [WeatherAPI](https://www.weatherapi.com/)
-- Données météo fallback : [Open-Meteo](https://open-meteo.com/)
+- Données météo principales : [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
+- Données météo fallback : [WeatherAPI](https://www.weatherapi.com/)
