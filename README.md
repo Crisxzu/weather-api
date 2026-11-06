@@ -231,6 +231,31 @@ Configuration recommandée : Open-Meteo en principal (prévisions jusqu'à 16 jo
 - **ip-api.com** — résolution IP → coordonnées (requêtes IP uniquement)
 - **Nominatim (OpenStreetMap)** — reverse geocoding coordonnées → nom de ville
 
+## Mise à jour des conditions météo
+
+`conditions.json` (textes et traductions des conditions) vient de la liste publiée par WeatherAPI, qui ajoute des codes de temps en temps. Pour la rafraîchir :
+
+```bash
+python manage.py update_conditions            # télécharge, valide, écrit si ça a changé
+python manage.py update_conditions --dry-run  # affiche les changements sans rien écrire
+```
+
+- Le fichier téléchargé est validé (structure, codes uniques, nombre minimal d'entrées) puis écrit de façon atomique.
+- Une liste qui **retire** des codes existants est refusée, sauf avec `--allow-removals`.
+- Les langues retirées sont signalées : si des clients envoient encore ces codes, ajoutez un alias dans `_LANG_ALIASES` (`api/utils/conditions.py`). Les anciens codes chinois (`zh`, `zh_hsn`, `zh_wuu`, `zh_yue`) y sont déjà.
+- Le serveur recharge le fichier tout seul (vérification toutes les 60 s), sans redémarrage.
+- Code de sortie non nul en cas d'échec, pour que le cron le signale.
+
+Exemple de cron hebdomadaire sur l'hôte Docker :
+
+```cron
+0 4 * * 1  docker exec <conteneur> python manage.py update_conditions
+```
+
+Dans un conteneur, la mise à jour est perdue au prochain déploiement (l'image repart du fichier versionné) : pensez à lancer la commande en local de temps en temps et à commiter le résultat.
+
+Si WeatherAPI renvoie un code encore absent du fichier, l'API utilise le texte (en anglais) fourni par WeatherAPI au lieu d'échouer.
+
 ## Structure du projet
 
 ```
@@ -243,6 +268,8 @@ WeatherAppApi/
 │   │   ├── registry.py      # Sélection primary/fallback via env vars
 │   │   ├── alerts.py        # Alertes WeatherAPI quand le provider n'en a pas
 │   │   └── schemas.py       # Dataclasses du contrat de données
+│   ├── management/commands/
+│   │   └── update_conditions.py  # Rafraîchit conditions.json depuis WeatherAPI
 │   ├── utils/
 │   │   ├── conditions.py    # Lookup conditions + mapping WMO
 │   │   ├── timezone.py      # Helper timezone
@@ -253,6 +280,7 @@ WeatherAppApi/
 │   │   ├── test_weatherapi.py
 │   │   ├── test_openmeteo.py
 │   │   ├── test_alerts.py
+│   │   ├── test_update_conditions.py
 │   │   └── test_views.py
 │   ├── serializers.py
 │   └── views.py
@@ -268,7 +296,7 @@ WeatherAppApi/
 python manage.py test api.tests
 ```
 
-101 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes).
+122 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes, mise à jour des conditions).
 
 ## Licence
 
