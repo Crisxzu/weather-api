@@ -1,4 +1,4 @@
-FROM python:3.10-slim
+FROM python:3.13-slim
 
 # Installer les dépendances système nécessaires
 RUN apt-get update \
@@ -19,6 +19,6 @@ COPY . .
 
 EXPOSE 8000
 
-RUN pip install "gunicorn==23.0.0"
+RUN pip install "gunicorn==26.2.0"
 
 CMD ["gunicorn", "WeatherAppApi.wsgi:application", "--config", "gunicorn.conf.py"]

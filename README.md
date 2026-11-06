@@ -15,9 +15,9 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 
 ## Prérequis
 
-- Python 3.10+
-- Django 4.2+
-- Django REST Framework 3.16+
+- Python 3.13
+- Django 5.2 LTS
+- Django REST Framework 3.18+
 
 ## Installation
 
@@ -79,8 +79,9 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 
 6. Créez une clé API :
    ```bash
-   python manage.py create_api_key --name "nom-de-la-clé"
+   python manage.py shell -c "from rest_framework_api_key.models import APIKey; print(APIKey.objects.create_key(name='nom-de-la-clé')[1])"
    ```
+   La clé n'est affichée qu'une fois : conservez-la. Les clés se gèrent aussi depuis l'admin Django (`/admin/`).
 
 7. Lancez le serveur :
    ```bash
@@ -329,6 +330,16 @@ WeatherAppApi/
 ├── manage.py
 └── requirements.txt
 ```
+
+## Mise à jour des dépendances
+
+Les dépendances directes sont listées dans `requirements.in` ; `requirements.txt` (toutes les versions figées) en est généré :
+
+```bash
+uv pip compile requirements.in --python-version 3.13 --upgrade -o requirements.txt
+```
+
+Gunicorn est installé à part dans le `Dockerfile`.
 
 ## Tests
 
