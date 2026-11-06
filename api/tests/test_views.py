@@ -10,6 +10,18 @@ from api.providers.schemas import (
     Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, WeatherData,
 )
 
+# The view looks up alerts separately when the provider has none; keep these
+# tests off the network. WeatherViewAlertsTests patches it explicitly.
+_alerts_patcher = patch('api.views.get_alerts', return_value=None)
+
+
+def setUpModule():
+    _alerts_patcher.start()
+
+
+def tearDownModule():
+    _alerts_patcher.stop()
+
 
 def _make_weather_data(**overrides):
     defaults = dict(
@@ -308,3 +320,37 @@ class WeatherViewV2Tests(TestCase):
         self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
         self.assertEqual(mock_cache_set.call_args[0][2], CACHE_TTL)
 
+
+class WeatherViewAlertsTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_alerts_fetched_separately_when_provider_has_none(self, mock_registry):
+        from api.providers.schemas import WeatherAlert
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()  # alerts=None, like Open-Meteo
+        mock_registry.return_value = provider
+        alert = WeatherAlert(event='Storm', headline='Orages', severity='Moderate', effective=1, expires=2)
+
+        with patch('api.views.get_alerts', return_value=[alert]) as mock_alerts:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_alerts.assert_called_once_with(48.8566, 2.3522)
+        self.assertEqual(data['alerts'][0]['event'], 'Storm')
+
+    @patch('api.views.get_primary_provider')
+    def test_alerts_not_refetched_when_provider_supplied_them(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data(alerts=[])  # like WeatherAPI
+        mock_registry.return_value = provider
+
+        with patch('api.views.get_alerts') as mock_alerts:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_alerts.assert_not_called()
+        self.assertEqual(data['alerts'], [])

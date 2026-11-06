@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 
+from api.providers.alerts import get_alerts
 from api.providers.base import WeatherServiceError, WeatherServiceUnavailableError
 from api.providers.registry import get_primary_provider, get_fallback_provider
 from api.serializers import WeatherDataSerializer
@@ -76,6 +77,9 @@ class WeatherDataView(APIView):
         except Exception:
             logger.exception('Unexpected exception while handling weather request')
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if weather_data.alerts is None:
+            weather_data.alerts = get_alerts(weather_data.location.lat, weather_data.location.lon)
 
         serializer = WeatherDataSerializer(data=asdict(weather_data))
         if not serializer.is_valid():
