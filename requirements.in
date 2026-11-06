@@ -1,0 +1,12 @@
+# Direct dependencies. requirements.txt is generated from this file:
+#   uv pip compile requirements.in --python-version 3.13 -o requirements.txt
+Django>=5.2,<5.3  # LTS (supported until April 2028)
+djangorestframework
+djangorestframework-api-key
+django-cors-headers
+python-dotenv
+requests
+pytz
+tzdata  # IANA zone data for zoneinfo (absent from slim Docker images)
+psycopg2-binary
+redis

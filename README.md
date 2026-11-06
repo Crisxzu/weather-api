@@ -15,9 +15,9 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 
 ## Prérequis
 
-- Python 3.10+
-- Django 4.2+
-- Django REST Framework 3.16+
+- Python 3.13
+- Django 5.2 LTS
+- Django REST Framework 3.18+
 
 ## Installation
 
@@ -329,6 +329,16 @@ WeatherAppApi/
 ├── manage.py
 └── requirements.txt
 ```
+
+## Mise à jour des dépendances
+
+Les dépendances directes sont listées dans `requirements.in` ; `requirements.txt` (toutes les versions figées) en est généré :
+
+```bash
+uv pip compile requirements.in --python-version 3.13 --upgrade -o requirements.txt
+```
+
+Gunicorn est installé à part dans le `Dockerfile`.
 
 ## Tests
 
