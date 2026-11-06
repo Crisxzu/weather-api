@@ -406,3 +406,22 @@ class OpenMeteoYesterdayTests(TestCase):
 def get_condition_code_for_wmo(wmo):
     from api.utils.conditions import get_condition_by_wmo_code
     return get_condition_by_wmo_code(wmo).code
+
+
+class OpenMeteoCityGeocodingTests(TestCase):
+
+    @patch('api.providers.openmeteo.requests.get')
+    def test_country_code_is_sent_to_geocoding(self, mock_get):
+        mock_get.side_effect = _make_requests_get_side_effect(
+            _load_fixture('openmeteo_response.json'),
+            geocoding=_load_fixture('openmeteo_geocoding_ambiguous_response.json'),
+        )
+        OpenMeteoProvider().get_weather(position=None, city='San Jose', country_code='cr', ip_address=None, lang_iso='en')
+        geo_call = next(c for c in mock_get.call_args_list if 'geocoding-api' in c[0][0])
+        self.assertEqual(geo_call[1]['params']['countryCode'], 'CR')
+
+    @patch('api.providers.openmeteo.requests.get')
+    def test_geocoding_http_error_raises_unavailable(self, mock_get):
+        mock_get.return_value = _mock_response({}, status_code=500)
+        with self.assertRaises(WeatherServiceUnavailableError):
+            OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')
