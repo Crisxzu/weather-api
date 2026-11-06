@@ -1,6 +1,12 @@
+# Environment and local data
 .env
 .venv
-.idea/
 db.sqlite3
 
-__pycache__
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Editors and OS
+.idea/
+.DS_Store
