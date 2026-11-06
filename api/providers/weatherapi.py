@@ -10,6 +10,7 @@ from api.providers.base import (
 )
 from api.providers.schemas import (
     Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, WeatherAlert, WeatherData,
+    YesterdayWeather,
 )
 from api.utils.conditions import get_condition_by_code
 from api.utils.timezone import get_time_for_timezone, local_to_epoch
@@ -17,6 +18,7 @@ from api.utils.timezone import get_time_for_timezone, local_to_epoch
 logger = logging.getLogger(__name__)
 
 _position_regex = r"-?\d+(\.\d+)?,-?\d+(\.\d+)?"
+_HISTORY_TIMEOUT_SECONDS = 3
 _ip_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
 
@@ -148,6 +150,37 @@ class WeatherAPIProvider(WeatherProvider):
             # 15-minute precipitation is not available on standard WeatherAPI plans.
             next_minutes=None,
             alerts=parse_alerts(data.get('alerts')),
+            yesterday=self._fetch_yesterday(loc['lat'], loc['lon'], now_hour, lang_iso),
+        )
+
+    def _fetch_yesterday(self, lat, lon, now_hour, lang_iso) -> YesterdayWeather | None:
+        """Yesterday's weather from history.json (second call). None on any failure:
+        it only feeds comparison messages and must not break the response."""
+        same_hour = now_hour - timedelta(days=1)  # same local wall-clock hour
+        date = same_hour.strftime('%Y-%m-%d')
+        try:
+            resp = requests.get(
+                f"{os.getenv('WEATHER_API_BASE_URL')}/history.json",
+                params={'key': os.getenv('WEATHER_API_KEY'), 'q': f'{lat},{lon}', 'dt': date},
+                timeout=_HISTORY_TIMEOUT_SECONDS,
+            )
+            if resp.status_code != 200:
+                logger.warning('WeatherAPI history returned HTTP %s', resp.status_code)
+                return None
+            day = resp.json()['forecast']['forecastday'][0]
+        except Exception:
+            logger.warning('WeatherAPI history unavailable', exc_info=True)
+            return None
+        if day.get('date') != date:
+            return None
+
+        hour_key = same_hour.strftime('%Y-%m-%d %H:00')
+        temp_same_hour = next((h.get('temp_c') for h in day.get('hour', []) if h.get('time') == hour_key), None)
+        return YesterdayWeather(
+            min_temp=day['day'].get('mintemp_c'),
+            max_temp=day['day'].get('maxtemp_c'),
+            temp_same_hour=temp_same_hour,
+            condition=_condition(day['day']['condition'], True, lang_iso) if day['day'].get('condition') else None,
         )
 
     def _build_24h(self, now_hour, forecast_days, lang_iso) -> list[HourlyForecast]:

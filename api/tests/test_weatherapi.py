@@ -51,14 +51,14 @@ class WeatherAPIProviderHappyPathTests(TestCase):
     def test_city_with_country_code_sends_combined_query(self, mock_get):
         mock_get.return_value = _mock_response(_load_fixture('weatherapi_response.json'))
         WeatherAPIProvider().get_weather(position=None, city='Fes', country_code='MA', ip_address=None, lang_iso='en')
-        called_params = mock_get.call_args[1]['params']
+        called_params = mock_get.call_args_list[0][1]['params']
         self.assertEqual(called_params['q'], 'Fes,MA')
 
     @patch('api.providers.weatherapi.requests.get')
     def test_city_without_country_code_sends_city_only(self, mock_get):
         mock_get.return_value = _mock_response(_load_fixture('weatherapi_response.json'))
         WeatherAPIProvider().get_weather(position=None, city='Fes', country_code=None, ip_address=None, lang_iso='en')
-        called_params = mock_get.call_args[1]['params']
+        called_params = mock_get.call_args_list[0][1]['params']
         self.assertEqual(called_params['q'], 'Fes')
 
     @patch('api.providers.weatherapi.requests.get')
@@ -148,13 +148,13 @@ class WeatherAPIProviderV2FieldsTests(TestCase):
     @patch('api.providers.weatherapi.requests.get')
     def test_requests_alerts(self, mock_get):
         self._get(mock_get)
-        self.assertEqual(mock_get.call_args[1]['params']['alerts'], 'yes')
+        self.assertEqual(mock_get.call_args_list[0][1]['params']['alerts'], 'yes')
 
     @patch('api.providers.weatherapi.requests.get')
     def test_forecast_days_follows_env(self, mock_get):
         with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '7'}):
             self._get(mock_get)
-        self.assertEqual(mock_get.call_args[1]['params']['days'], 7)
+        self.assertEqual(mock_get.call_args_list[0][1]['params']['days'], 7)
 
     @patch('api.providers.weatherapi.requests.get')
     def test_current_v2_fields(self, mock_get):
@@ -280,3 +280,72 @@ class WeatherAPIProviderSkyAndSnowTests(TestCase):
     @patch('api.providers.weatherapi.requests.get')
     def test_daily_total_snow(self, mock_get):
         self.assertEqual(self._get(mock_get).next_days[2].total_snow_cm, 3.5)
+
+
+def _frozen_paris(*args):
+    import pytz
+    from datetime import datetime
+    return pytz.timezone('Europe/Paris').localize(datetime(*args))
+
+
+def _history_for(date):
+    """history.json response built from the fixture's first day, relabelled to `date`."""
+    day = _load_fixture('weatherapi_response.json')['forecast']['forecastday'][0]
+    day['date'] = date
+    for h in day['hour']:
+        h['time'] = date + h['time'][10:]
+    return {'location': {}, 'forecast': {'forecastday': [day]}}
+
+
+@patch('api.providers.weatherapi.get_time_for_timezone', return_value=_frozen_paris(2025, 6, 2, 10, 30))
+@patch('api.providers.weatherapi.requests.get')
+class WeatherAPIProviderYesterdayTests(TestCase):
+
+    def _get(self, mock_get, history=None, history_status=200, history_exc=None):
+        forecast = _load_fixture('weatherapi_response.json')
+
+        def side_effect(url, **kwargs):
+            if 'history.json' in url:
+                if history_exc:
+                    raise history_exc
+                return _mock_response(history if history is not None else _history_for('2025-06-01'), history_status)
+            return _mock_response(forecast)
+
+        mock_get.side_effect = side_effect
+        return WeatherAPIProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_requests_yesterday_local_date(self, mock_get, _now):
+        self._get(mock_get)
+        history_call = next(c for c in mock_get.call_args_list if 'history.json' in c[0][0])
+        self.assertEqual(history_call[1]['params']['dt'], '2025-06-01')
+        self.assertEqual(history_call[1]['params']['q'], '48.8566,2.3522')
+
+    def test_yesterday_block(self, mock_get, _now):
+        yesterday = self._get(mock_get).yesterday
+        self.assertEqual(yesterday.min_temp, 12.1)
+        self.assertEqual(yesterday.max_temp, 23.5)
+        self.assertEqual(yesterday.temp_same_hour, 18.0)  # 2025-06-01 10:00
+        self.assertEqual(yesterday.condition.code, 1000)
+
+    def test_missing_hour_gives_null_temp_same_hour(self, mock_get, _now):
+        history = _history_for('2025-06-01')
+        history['forecast']['forecastday'][0]['hour'] = []
+        self.assertIsNone(self._get(mock_get, history=history).yesterday.temp_same_hour)
+
+    def test_wrong_date_is_ignored(self, mock_get, _now):
+        self.assertIsNone(self._get(mock_get, history=_history_for('2025-05-20')).yesterday)
+
+    def test_history_http_error_keeps_the_weather(self, mock_get, _now):
+        result = self._get(mock_get, history_status=403)
+        self.assertIsNone(result.yesterday)
+        self.assertEqual(result.current.temp, 18.0)
+
+    def test_history_timeout_keeps_the_weather(self, mock_get, _now):
+        import requests as req
+        result = self._get(mock_get, history_exc=req.exceptions.Timeout())
+        self.assertIsNone(result.yesterday)
+        self.assertEqual(result.current.temp, 18.0)
+
+    def test_malformed_history_keeps_the_weather(self, mock_get, _now):
+        with self.assertLogs('api.providers.weatherapi', level='WARNING'):
+            self.assertIsNone(self._get(mock_get, history={'unexpected': True}).yesterday)

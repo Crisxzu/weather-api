@@ -349,3 +349,60 @@ class OpenMeteoSkyAndSnowTests(TestCase):
 
     def test_daily_total_snow(self, mock_get, _now):
         self.assertEqual(self._get(mock_get).next_days[2].total_snow_cm, 3.5)
+
+
+def _with_yesterday(forecast):
+    """Prepend 2025-05-31 to the fixture, as Open-Meteo does with past_days=1."""
+    h, d = forecast['hourly'], forecast['daily']
+    past_hours = [f'2025-05-31T{i:02d}:00' for i in range(24)]
+    for key, values in h.items():
+        if key == 'time':
+            h[key] = past_hours + values
+        elif key == 'temperature_2m':
+            h[key] = [10.0 + i * 0.5 for i in range(24)] + values  # 12:00 -> 16.0
+        else:
+            h[key] = values[:24] + values
+    yesterday_daily = {
+        'time': '2025-05-31', 'weather_code': 61, 'temperature_2m_max': 15.0, 'temperature_2m_min': 8.0,
+    }
+    for key, values in d.items():
+        d[key] = [yesterday_daily.get(key, values[0])] + values
+    return forecast
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoYesterdayTests(TestCase):
+
+    def _get(self, mock_get, forecast):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast)
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_requests_past_day(self, mock_get, _now):
+        self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json')))
+        forecast_call = next(c for c in mock_get.call_args_list if 'api.open-meteo.com' in c[0][0])
+        self.assertEqual(forecast_call[1]['params']['past_days'], 1)
+
+    def test_yesterday_block(self, mock_get, _now):
+        yesterday = self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json'))).yesterday
+        self.assertEqual(yesterday.min_temp, 8.0)
+        self.assertEqual(yesterday.max_temp, 15.0)
+        self.assertEqual(yesterday.temp_same_hour, 16.0)  # 2025-05-31T12:00
+        self.assertEqual(yesterday.condition.code, get_condition_code_for_wmo(61))
+
+    def test_yesterday_does_not_leak_into_today(self, mock_get, _now):
+        plain = self._get(mock_get, _load_fixture('openmeteo_response.json'))
+        shifted = self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json')))
+        self.assertEqual(shifted.current.min_temp, plain.current.min_temp)
+        self.assertEqual(shifted.current.max_temp, plain.current.max_temp)
+        self.assertEqual(len(shifted.next_days), 3)
+        self.assertEqual(shifted.next_days[0].timestamp, _UTC_MIDNIGHT_2025_06_01)
+        self.assertEqual([h.timestamp for h in shifted.next_24h], [h.timestamp for h in plain.next_24h])
+
+    def test_no_past_day_gives_null(self, mock_get, _now):
+        self.assertIsNone(self._get(mock_get, _load_fixture('openmeteo_response.json')).yesterday)
+
+
+def get_condition_code_for_wmo(wmo):
+    from api.utils.conditions import get_condition_by_wmo_code
+    return get_condition_by_wmo_code(wmo).code

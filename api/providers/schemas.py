@@ -82,6 +82,15 @@ class DailyForecast:
 
 
 @dataclass
+class YesterdayWeather:
+    min_temp: float | None
+    max_temp: float | None
+    # Temperature yesterday at the current local hour, for "6° warmer than yesterday".
+    temp_same_hour: float | None
+    condition: Condition | None
+
+
+@dataclass
 class MinutelyPrecipitation:
     timestamp: int
     precip_mm: float | None
@@ -108,3 +117,4 @@ class WeatherData:
     # v2 — None means "this provider does not support it", not "nothing to report".
     next_minutes: list[MinutelyPrecipitation] | None = None
     alerts: list[WeatherAlert] | None = None
+    yesterday: YesterdayWeather | None = None

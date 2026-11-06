@@ -80,6 +80,12 @@ class DailyForecastSerializer(serializers.Serializer):
     sunset = serializers.IntegerField(allow_null=True)
     total_snow_cm = serializers.FloatField(**_non_negative)
 
+class YesterdayWeatherSerializer(serializers.Serializer):
+    min_temp = _nullable_temp()
+    max_temp = _nullable_temp()
+    temp_same_hour = _nullable_temp()
+    condition = ConditionSerializer(allow_null=True)
+
 class MinutelyPrecipitationSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField()
     precip_mm = serializers.FloatField(**_non_negative)
@@ -102,3 +108,4 @@ class WeatherDataSerializer(serializers.Serializer):
     # v2 — null = not supported by the provider that answered
     next_minutes = MinutelyPrecipitationSerializer(many=True, allow_null=True)
     alerts = WeatherAlertSerializer(many=True, allow_null=True)
+    yesterday = YesterdayWeatherSerializer(allow_null=True)

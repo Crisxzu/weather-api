@@ -8,6 +8,7 @@ import requests
 from api.providers.base import WeatherProvider, WeatherServiceUnavailableError, get_forecast_days
 from api.providers.schemas import (
     Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, MinutelyPrecipitation, WeatherData,
+    YesterdayWeather,
 )
 from api.utils.conditions import get_condition_by_code, get_condition_by_wmo_code
 from api.utils.ip_geolocation import resolve_ip
@@ -98,8 +99,15 @@ class OpenMeteoProvider(WeatherProvider):
             loc_country = geo['country']
 
         current = raw['current']
-        daily = raw['daily']
         hourly = raw['hourly']
+        # past_days=1 puts yesterday first in the daily arrays: locate today
+        # rather than assuming its position.
+        today_idx = self._index_of(raw['daily']['time'], now.strftime('%Y-%m-%d'))
+        daily = {k: v[today_idx:] for k, v in raw['daily'].items()}
+        yesterday = (
+            self._build_yesterday(raw['daily'], today_idx - 1, hourly, now_hour, lang_iso)
+            if today_idx > 0 else None
+        )
 
         is_day = bool(current['is_day'])
         mapped = get_condition_by_wmo_code(current['weather_code'])
@@ -143,6 +151,7 @@ class OpenMeteoProvider(WeatherProvider):
             next_minutes=self._build_minutes(raw.get('minutely_15'), tz_id),
             # Open-Meteo has no official weather alerts: None = "not supported", not "no alert".
             alerts=None,
+            yesterday=yesterday,
         )
 
     def _geocode_city(self, city: str, country_code: str | None = None) -> tuple[float, float]:
@@ -198,6 +207,7 @@ class OpenMeteoProvider(WeatherProvider):
             'forecast_minutely_15': _MINUTELY_STEPS,
             'timezone': 'auto',
             'forecast_days': get_forecast_days(),
+            'past_days': 1,
         }
         try:
             resp = requests.get(_FORECAST_URL, params=params, timeout=10)
@@ -278,6 +288,37 @@ class OpenMeteoProvider(WeatherProvider):
                 total_snow_cm=_at(daily, 'snowfall_sum', i),
             ))
         return result
+
+    @staticmethod
+    def _index_of(values: list, value) -> int:
+        try:
+            return values.index(value)
+        except ValueError:
+            return 0
+
+    def _build_yesterday(self, daily, i, hourly, now_hour, lang_iso) -> YesterdayWeather:
+        # Same wall-clock hour yesterday (pytz arithmetic keeps the local fields).
+        same_hour = (now_hour - timedelta(days=1)).strftime('%Y-%m-%dT%H:00')
+        try:
+            temp_same_hour = hourly['temperature_2m'][hourly['time'].index(same_hour)]
+        except (ValueError, KeyError, IndexError):
+            temp_same_hour = None
+
+        code = _at(daily, 'weather_code', i)
+        condition = None
+        if code is not None:
+            mapped = get_condition_by_wmo_code(code)
+            condition = Condition(
+                code=mapped.code,
+                text=get_condition_by_code(mapped.code, True, lang_iso),
+                icon=mapped.icon,
+            )
+        return YesterdayWeather(
+            min_temp=_at(daily, 'temperature_2m_min', i),
+            max_temp=_at(daily, 'temperature_2m_max', i),
+            temp_same_hour=temp_same_hour,
+            condition=condition,
+        )
 
     def _build_minutes(self, minutely, tz_id) -> list[MinutelyPrecipitation] | None:
         # Real 15-minute data only exists over Central Europe and North America;
