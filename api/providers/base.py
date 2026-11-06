@@ -51,17 +51,18 @@ class WeatherProvider(ABC):
         ...
 
 
+_DEFAULT_FORECAST_DAYS = 7
 _MAX_FORECAST_DAYS = 16
 
 
 def get_forecast_days() -> int:
-    """Number of forecast days to request (WEATHER_FORECAST_DAYS, default 3, clamped to 1..16).
+    """Number of forecast days to request (WEATHER_FORECAST_DAYS, default 7, clamped to 1..16).
 
-    Providers may return fewer days than requested (WeatherAPI's plan caps it),
-    so clients must accept a variable-length next_days.
+    Providers may return fewer days than requested (WeatherAPI's plan caps it
+    at 3), so clients must accept a variable-length next_days.
     """
     try:
-        days = int(os.getenv('WEATHER_FORECAST_DAYS', 3))
+        days = int(os.getenv('WEATHER_FORECAST_DAYS', _DEFAULT_FORECAST_DAYS))
     except ValueError:
-        days = 3
+        days = _DEFAULT_FORECAST_DAYS
     return max(1, min(days, _MAX_FORECAST_DAYS))

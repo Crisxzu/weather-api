@@ -172,3 +172,30 @@ class ConditionsReloadTests(TestCase):
         with patch('api.utils.conditions.os.stat') as mock_stat:
             store.get(1000)
         mock_stat.assert_not_called()
+
+
+class ForecastDaysTests(TestCase):
+
+    def test_defaults_to_seven_days(self):
+        import os
+        from api.providers.base import get_forecast_days
+        with patch.dict('os.environ', {}, clear=False):
+            os.environ.pop('WEATHER_FORECAST_DAYS', None)
+            self.assertEqual(get_forecast_days(), 7)
+
+    def test_env_overrides_default(self):
+        from api.providers.base import get_forecast_days
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '3'}):
+            self.assertEqual(get_forecast_days(), 3)
+
+    def test_invalid_value_falls_back_to_default(self):
+        from api.providers.base import get_forecast_days
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': 'abc'}):
+            self.assertEqual(get_forecast_days(), 7)
+
+    def test_clamped_to_provider_limits(self):
+        from api.providers.base import get_forecast_days
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '30'}):
+            self.assertEqual(get_forecast_days(), 16)
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '0'}):
+            self.assertEqual(get_forecast_days(), 1)

@@ -49,7 +49,7 @@ API Django REST Framework fournissant des données météorologiques actuelles e
    # Providers
    WEATHER_PRIMARY_PROVIDER=openmeteo
    WEATHER_FALLBACK_PROVIDER=weatherapi
-   WEATHER_FORECAST_DAYS=3          # 1 à 16 (WeatherAPI peut en renvoyer moins selon le plan)
+   WEATHER_FORECAST_DAYS=7          # 1 à 16, défaut 7 (WeatherAPI en renvoie 3 sur le plan actuel)
 
    # Django
    DJANGO_SECRET_KEY=votre_clé_secrète
@@ -230,7 +230,8 @@ Tous les champs ajoutés pour la v2 sont **nullables** : un provider qui ne sait
 
 - Températures en °C, vent en km/h, précipitations en mm, probabilités en %, timestamps en epoch secondes.
 - `next_days[].timestamp` vaut minuit **UTC** de la date (même convention pour les deux providers). `sunrise` / `sunset` sont de vrais instants.
-- `next_days` peut contenir **moins** de jours que `WEATHER_FORECAST_DAYS` (le plan WeatherAPI limite le nombre de jours) : la longueur est variable.
+- `next_days` contient 7 jours par défaut (`WEATHER_FORECAST_DAYS`), mais **moins** quand WeatherAPI répond en secours (3 jours sur le plan actuel) : la longueur est variable.
+- En fin de période, certaines valeurs peuvent manquer : dans `air_quality.days`, les pollens s'arrêtent vers le 5ᵉ jour et les indices vers le 6ᵉ (valeurs `null`).
 - `chance_of_snow` vaut `null` avec Open-Meteo (pas de probabilité de neige).
 - `cloud_cover` en %, `visibility_km` en km, neige (`snow_cm`, `total_snow_cm`) en cm.
 - `yesterday` : météo de la veille (`min_temp`, `max_temp`, `condition`) et `temp_same_hour`, la température d'hier à l'heure locale actuelle, pour des messages comme « 6° de plus qu'hier ». Open-Meteo : même requête (`past_days=1`). WeatherAPI : appel séparé à `history.json`, `null` s'il échoue.
