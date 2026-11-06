@@ -11,16 +11,19 @@ from api.providers.schemas import (
 )
 
 # The view looks up alerts separately when the provider has none; keep these
-# tests off the network. WeatherViewAlertsTests patches it explicitly.
+# tests off the network (same for air quality). Tests that need them patch explicitly.
 _alerts_patcher = patch('api.views.get_alerts', return_value=None)
+_air_quality_patcher = patch('api.views.get_air_quality', return_value=None)
 
 
 def setUpModule():
     _alerts_patcher.start()
+    _air_quality_patcher.start()
 
 
 def tearDownModule():
     _alerts_patcher.stop()
+    _air_quality_patcher.stop()
 
 
 def _make_weather_data(**overrides):
@@ -386,3 +389,43 @@ class WeatherViewYesterdayTests(TestCase):
         mock_registry.return_value = provider
         data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
         self.assertIsNone(data['yesterday'])
+
+
+class WeatherViewAirQualityTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_air_quality_fetched_and_serialized(self, mock_registry):
+        from api.providers.schemas import AirQuality, AirQualityDay, AirQualityValues, Pollen
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+        pollen = Pollen(alder=0.0, birch=12.0, grass=None, mugwort=0.0, olive=0.0, ragweed=0.0)
+        values = dict(european_aqi=40, us_aqi=55, pm2_5=10.0, pm10=20.0, ozone=60.0, nitrogen_dioxide=15.0)
+        aq = AirQuality(
+            current=AirQualityValues(**values, pollen=pollen),
+            days=[AirQualityDay(**values, pollen=None, timestamp=1748736000)],
+        )
+
+        with patch('api.views.get_air_quality', return_value=aq) as mock_aq:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_aq.assert_called_once_with(48.8566, 2.3522)
+        self.assertEqual(data['air_quality']['current']['european_aqi'], 40)
+        self.assertEqual(data['air_quality']['current']['pollen']['birch'], 12.0)
+        self.assertIsNone(data['air_quality']['current']['pollen']['grass'])
+        self.assertIsNone(data['air_quality']['days'][0]['pollen'])
+        self.assertEqual(data['air_quality']['days'][0]['timestamp'], 1748736000)
+
+    @patch('api.views.get_primary_provider')
+    def test_air_quality_null_when_unavailable(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertIsNone(data['air_quality'])

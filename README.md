@@ -64,6 +64,10 @@ API Django REST Framework fournissant des données météorologiques actuelles e
    WEATHER_ALERTS_PROVIDER=weatherapi   # vide = désactivé
    WEATHER_ALERTS_CACHE_TTL=1800
 
+   # Qualité de l'air et pollens (Open-Meteo Air Quality API, appel séparé)
+   WEATHER_AIR_QUALITY_PROVIDER=openmeteo   # vide = désactivé
+   WEATHER_AIR_QUALITY_CACHE_TTL=3600
+
    # Nominatim (reverse geocoding Open-Meteo) — User-Agent identifiable exigé
    NOMINATIM_USER_AGENT="WeatherAppApi/1.0 (+https://github.com/Crisxzu/weather-api)"
    ```
@@ -142,7 +146,9 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
     "wind_degree": 250,
     "gust_kph": 22.3,
     "uv": 6.0,
-    "precip_mm": 0.0
+    "precip_mm": 0.0,
+    "cloud_cover": 25,
+    "visibility_km": 24.14
   },
   "next_24h": [
     {
@@ -160,7 +166,10 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
       "precip_mm": 0.1,
       "feels_like": 18.7,
       "wind_kph": 13.0,
-      "uv": 6.0
+      "uv": 6.0,
+      "cloud_cover": 30,
+      "visibility_km": 24.14,
+      "snow_cm": 0.0
     }
   ],
   "next_days": [
@@ -181,14 +190,36 @@ GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
       "max_wind_kph": 18.0,
       "uv": 7.0,
       "sunrise": 1748749620,
-      "sunset": 1748807400
+      "sunset": 1748807400,
+      "total_snow_cm": 0.0
     }
   ],
   "next_minutes": [
     { "timestamp": 1748772000, "precip_mm": 0.0 },
     { "timestamp": 1748772900, "precip_mm": 0.4 }
   ],
-  "alerts": []
+  "alerts": [],
+  "yesterday": {
+    "min_temp": 11.0,
+    "max_temp": 20.5,
+    "temp_same_hour": 16.0,
+    "condition": { "code": 1183, "text": "Pluie légère", "icon": 296 }
+  },
+  "air_quality": {
+    "current": {
+      "european_aqi": 40, "us_aqi": 55, "pm2_5": 10.0, "pm10": 20.0,
+      "ozone": 60.0, "nitrogen_dioxide": 15.0,
+      "pollen": { "alder": 0.0, "birch": 12.0, "grass": 35.0, "mugwort": 0.0, "olive": 0.0, "ragweed": 0.0 }
+    },
+    "days": [
+      {
+        "european_aqi": 45, "us_aqi": 60, "pm2_5": 12.0, "pm10": 24.0,
+        "ozone": 80.0, "nitrogen_dioxide": 20.0,
+        "pollen": { "alder": 0.0, "birch": 30.0, "grass": 60.0, "mugwort": 0.0, "olive": 0.0, "ragweed": 0.0 },
+        "timestamp": 1748736000
+      }
+    ]
+  }
 }
 ```
 
@@ -200,6 +231,12 @@ Tous les champs ajoutés pour la v2 sont **nullables** : un provider qui ne sait
 - `next_days[].timestamp` vaut minuit **UTC** de la date (même convention pour les deux providers). `sunrise` / `sunset` sont de vrais instants.
 - `next_days` peut contenir **moins** de jours que `WEATHER_FORECAST_DAYS` (le plan WeatherAPI limite le nombre de jours) : la longueur est variable.
 - `chance_of_snow` vaut `null` avec Open-Meteo (pas de probabilité de neige).
+- `cloud_cover` en %, `visibility_km` en km, neige (`snow_cm`, `total_snow_cm`) en cm.
+- `yesterday` : météo de la veille (`min_temp`, `max_temp`, `condition`) et `temp_same_hour`, la température d'hier à l'heure locale actuelle, pour des messages comme « 6° de plus qu'hier ». Open-Meteo : même requête (`past_days=1`). WeatherAPI : appel séparé à `history.json`, `null` s'il échoue.
+- `air_quality` : toujours demandé à l'Air Quality API d'Open-Meteo (données CAMS), quel que soit le provider météo, avec son propre cache par zone de ~1 km (`WEATHER_AIR_QUALITY_CACHE_TTL`). `null` si indisponible.
+  - `current` : valeurs actuelles. `days[]` : **maxima** de chaque journée, `timestamp` à minuit UTC comme `next_days`.
+  - `european_aqi` (EAQI) et `us_aqi` sont des indices ; `pm2_5`, `pm10`, `ozone`, `nitrogen_dioxide` en µg/m³.
+  - `pollen` en grains/m³ (aulne, bouleau, graminées, armoise, olivier, ambroisie), **Europe uniquement** : `null` hors zone couverte, `0` = pas de pollen (hors saison). Les seuils d'alerte dépendent de l'espèce : c'est à l'app de traduire en niveaux.
 - `next_minutes` : précipitations par pas de 15 min sur les 2 prochaines heures. `null` avec WeatherAPI. Données réellement au quart d'heure seulement en Europe centrale et Amérique du Nord, ailleurs interpolées depuis l'horaire : à présenter avec prudence.
 - `alerts` : `[]` = aucune alerte en cours, `null` = alertes indisponibles (service désactivé ou en échec). Chaque alerte : `event`, `headline`, `severity`, `effective`, `expires`.
   Quand le provider qui a répondu n'a pas d'alertes (Open-Meteo), elles sont demandées à part à l'endpoint `alerts.json` de WeatherAPI, avec leur propre cache (par zone de ~1 km, toutes langues confondues, `WEATHER_ALERTS_CACHE_TTL`). Un échec n'affecte pas la réponse météo. La couverture dépend des pays (bonne aux États-Unis et en Europe) : `[]` ne garantit pas l'absence d'alerte officielle partout.
@@ -227,6 +264,7 @@ Configuration recommandée : Open-Meteo en principal (prévisions jusqu'à 16 jo
 
 ### Services tiers utilisés par Open-Meteo
 
+- **Open-Meteo Air Quality API** — qualité de l'air et pollens (appelée pour toutes les requêtes, quel que soit le provider météo)
 - **Open-Meteo Geocoding API** — résolution ville → coordonnées
 - **ip-api.com** — résolution IP → coordonnées (requêtes IP uniquement)
 - **Nominatim (OpenStreetMap)** — reverse geocoding coordonnées → nom de ville
@@ -267,6 +305,7 @@ WeatherAppApi/
 │   │   ├── openmeteo.py     # OpenMeteoProvider
 │   │   ├── registry.py      # Sélection primary/fallback via env vars
 │   │   ├── alerts.py        # Alertes WeatherAPI quand le provider n'en a pas
+│   │   ├── air_quality.py   # Qualité de l'air et pollens (Open-Meteo Air Quality API)
 │   │   └── schemas.py       # Dataclasses du contrat de données
 │   ├── management/commands/
 │   │   └── update_conditions.py  # Rafraîchit conditions.json depuis WeatherAPI
@@ -280,6 +319,7 @@ WeatherAppApi/
 │   │   ├── test_weatherapi.py
 │   │   ├── test_openmeteo.py
 │   │   ├── test_alerts.py
+│   │   ├── test_air_quality.py
 │   │   ├── test_update_conditions.py
 │   │   └── test_views.py
 │   ├── serializers.py
@@ -296,7 +336,7 @@ WeatherAppApi/
 python manage.py test api.tests
 ```
 
-122 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes, mise à jour des conditions).
+157 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes, météo de la veille, qualité de l'air, mise à jour des conditions).
 
 ## Licence
 
@@ -309,4 +349,5 @@ Chris Kouassi
 ## Crédits
 
 - Données météo principales : [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
-- Données météo fallback : [WeatherAPI](https://www.weatherapi.com/)
+- Données météo fallback et alertes : [WeatherAPI](https://www.weatherapi.com/)
+- Qualité de l'air et pollens : [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api), contient des informations modifiées du Copernicus Atmosphere Monitoring Service (CAMS) — à créditer dans l'app.

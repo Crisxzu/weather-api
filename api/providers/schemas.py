@@ -106,6 +106,41 @@ class WeatherAlert:
 
 
 @dataclass
+class Pollen:
+    """Pollen concentrations in grains/m³ (Europe only)."""
+    alder: float | None
+    birch: float | None
+    grass: float | None
+    mugwort: float | None
+    olive: float | None
+    ragweed: float | None
+
+
+@dataclass
+class AirQualityValues:
+    european_aqi: float | None
+    us_aqi: float | None
+    pm2_5: float | None
+    pm10: float | None
+    ozone: float | None
+    nitrogen_dioxide: float | None
+    # None outside the covered area (Europe); zeros mean "no pollen" (e.g. off-season).
+    pollen: Pollen | None
+
+
+@dataclass
+class AirQualityDay(AirQualityValues):
+    """Daily maxima. timestamp = midnight UTC of the date, like next_days."""
+    timestamp: int | None = None
+
+
+@dataclass
+class AirQuality:
+    current: AirQualityValues
+    days: list[AirQualityDay]
+
+
+@dataclass
 class WeatherData:
     last_updated: int
     source: str
@@ -118,3 +153,4 @@ class WeatherData:
     next_minutes: list[MinutelyPrecipitation] | None = None
     alerts: list[WeatherAlert] | None = None
     yesterday: YesterdayWeather | None = None
+    air_quality: AirQuality | None = None

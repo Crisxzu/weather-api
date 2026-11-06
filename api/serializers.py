@@ -97,6 +97,30 @@ class WeatherAlertSerializer(serializers.Serializer):
     effective = serializers.IntegerField(allow_null=True)
     expires = serializers.IntegerField(allow_null=True)
 
+class PollenSerializer(serializers.Serializer):
+    alder = serializers.FloatField(**_non_negative)
+    birch = serializers.FloatField(**_non_negative)
+    grass = serializers.FloatField(**_non_negative)
+    mugwort = serializers.FloatField(**_non_negative)
+    olive = serializers.FloatField(**_non_negative)
+    ragweed = serializers.FloatField(**_non_negative)
+
+class AirQualityValuesSerializer(serializers.Serializer):
+    european_aqi = serializers.FloatField(**_non_negative)
+    us_aqi = serializers.FloatField(**_non_negative)
+    pm2_5 = serializers.FloatField(**_non_negative)
+    pm10 = serializers.FloatField(**_non_negative)
+    ozone = serializers.FloatField(**_non_negative)
+    nitrogen_dioxide = serializers.FloatField(**_non_negative)
+    pollen = PollenSerializer(allow_null=True)
+
+class AirQualityDaySerializer(AirQualityValuesSerializer):
+    timestamp = serializers.IntegerField(allow_null=True)
+
+class AirQualitySerializer(serializers.Serializer):
+    current = AirQualityValuesSerializer()
+    days = AirQualityDaySerializer(many=True)
+
 class WeatherDataSerializer(serializers.Serializer):
     last_updated = serializers.IntegerField()
     source = serializers.CharField(max_length=100)
@@ -109,3 +133,4 @@ class WeatherDataSerializer(serializers.Serializer):
     next_minutes = MinutelyPrecipitationSerializer(many=True, allow_null=True)
     alerts = WeatherAlertSerializer(many=True, allow_null=True)
     yesterday = YesterdayWeatherSerializer(allow_null=True)
+    air_quality = AirQualitySerializer(allow_null=True)
