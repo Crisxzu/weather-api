@@ -79,8 +79,9 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 
 6. Créez une clé API :
    ```bash
-   python manage.py create_api_key --name "nom-de-la-clé"
+   python manage.py shell -c "from rest_framework_api_key.models import APIKey; print(APIKey.objects.create_key(name='nom-de-la-clé')[1])"
    ```
+   La clé n'est affichée qu'une fois : conservez-la. Les clés se gèrent aussi depuis l'admin Django (`/admin/`).
 
 7. Lancez le serveur :
    ```bash
