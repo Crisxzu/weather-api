@@ -211,3 +211,42 @@ class WeatherViewFallbackTests(TestCase):
 
         response = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
         self.assertEqual(response.status_code, 503)
+
+
+class PositionRoundingTests(TestCase):
+
+    def test_rounds_to_two_decimals(self):
+        from api.views import round_position
+        self.assertEqual(round_position('48.856613,2.352222'), '48.86,2.35')
+        self.assertEqual(round_position(' 48.8566 , 2.3522 '), '48.86,2.35')
+        self.assertEqual(round_position('-33.8688,151.2093'), '-33.87,151.21')
+
+    def test_negative_zero_is_normalized(self):
+        from api.views import round_position
+        self.assertEqual(round_position('-0.001,0.001'), '0.00,0.00')
+
+    def test_invalid_or_missing_position_is_left_untouched(self):
+        from api.views import round_position
+        self.assertEqual(round_position('not-valid'), 'not-valid')
+        self.assertIsNone(round_position(None))
+
+
+class WeatherViewPositionRoundingTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_nearby_positions_share_cache_and_provider_gets_rounded_position(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.client.get(self.url, {'position': '48.8571,2.3519'}, **self.auth)
+
+        provider.get_weather.assert_called_once()
+        self.assertEqual(provider.get_weather.call_args[1]['position'], '48.86,2.35')

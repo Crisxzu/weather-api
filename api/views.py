@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from dataclasses import asdict
 
 from django.core.cache import cache
@@ -16,12 +17,30 @@ logger = logging.getLogger(__name__)
 
 CACHE_TTL = int(os.getenv('WEATHER_CACHE_TTL', 3600))
 
+_position_regex = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$')
+POSITION_PRECISION = 2  # ~1.1 km: nearby users share cache entries and upstream calls
+
+
+def round_position(position: str | None) -> str | None:
+    """Round "lat,lon" to POSITION_PRECISION decimals; leave anything else untouched."""
+    if not position:
+        return position
+    m = _position_regex.match(position)
+    if not m:
+        return position
+    # "+ 0.0" turns -0.0 into 0.0 so both spellings share one cache key
+    lat, lon = (round(float(g), POSITION_PRECISION) + 0.0 for g in m.groups())
+    return f'{lat:.{POSITION_PRECISION}f},{lon:.{POSITION_PRECISION}f}'
+
+
 
 class WeatherDataView(APIView):
     permission_classes = [HasAPIKey]
 
     def get(self, request):
-        position = request.query_params.get('position')
+        # Rounded before both the cache key and the provider call, so a cached
+        # entry is exactly what any user in that ~1 km cell would have received.
+        position = round_position(request.query_params.get('position'))
         city = request.query_params.get('city')
         country_code = request.query_params.get('country_code')
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
