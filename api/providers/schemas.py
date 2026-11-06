@@ -39,6 +39,8 @@ class CurrentWeather:
     gust_kph: float | None = None
     uv: float | None = None
     precip_mm: float | None = None
+    cloud_cover: float | None = None
+    visibility_km: float | None = None
 
 
 @dataclass
@@ -55,6 +57,9 @@ class HourlyForecast:
     feels_like: float | None = None
     wind_kph: float | None = None
     uv: float | None = None
+    cloud_cover: float | None = None
+    visibility_km: float | None = None
+    snow_cm: float | None = None
 
 
 @dataclass
@@ -73,6 +78,7 @@ class DailyForecast:
     uv: float | None = None
     sunrise: int | None = None
     sunset: int | None = None
+    total_snow_cm: float | None = None
 
 
 @dataclass

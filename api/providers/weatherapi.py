@@ -140,6 +140,8 @@ class WeatherAPIProvider(WeatherProvider):
                 gust_kph=cur.get('gust_kph'),
                 uv=cur.get('uv'),
                 precip_mm=cur.get('precip_mm'),
+                cloud_cover=cur.get('cloud'),
+                visibility_km=cur.get('vis_km'),
             ),
             next_24h=self._build_24h(now_hour, forecast_days, lang_iso),
             next_days=self._build_days(forecast_days, loc['tz_id'], lang_iso),
@@ -167,6 +169,9 @@ class WeatherAPIProvider(WeatherProvider):
                 feels_like=h.get('feelslike_c'),
                 wind_kph=h.get('wind_kph'),
                 uv=h.get('uv'),
+                cloud_cover=h.get('cloud'),
+                visibility_km=h.get('vis_km'),
+                snow_cm=h.get('snow_cm'),
             )
             for h in forecast_hours
             if now_hour.timestamp() <= h['time_epoch'] <= datetime_in_24h.timestamp()
@@ -188,6 +193,7 @@ class WeatherAPIProvider(WeatherProvider):
                 uv=d['day'].get('uv'),
                 sunrise=self._astro_epoch(d, 'sunrise', tz_id),
                 sunset=self._astro_epoch(d, 'sunset', tz_id),
+                total_snow_cm=d['day'].get('totalsnow_cm'),
             )
             for d in forecast_days
         ]

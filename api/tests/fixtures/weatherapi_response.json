@@ -25,7 +25,9 @@
     "wind_degree": 250,
     "gust_kph": 22.3,
     "uv": 6.0,
-    "precip_mm": 0.0
+    "precip_mm": 0.0,
+    "cloud": 25,
+    "vis_km": 10.0
   },
   "forecast": {
     "forecastday": [
@@ -45,7 +47,8 @@
           "daily_chance_of_snow": 0,
           "totalprecip_mm": 0.0,
           "maxwind_kph": 18.0,
-          "uv": 7.0
+          "uv": 7.0,
+          "totalsnow_cm": 0.0
         },
         "hour": [
           {
@@ -64,7 +67,10 @@
             "precip_mm": 0.0,
             "feelslike_c": 12.5,
             "wind_kph": 8.6,
-            "uv": 0.0
+            "uv": 0.0,
+            "cloud": 10,
+            "vis_km": 10.0,
+            "snow_cm": 0.0
           },
           {
             "time_epoch": 1748772000,
@@ -82,7 +88,10 @@
             "precip_mm": 0.1,
             "feelslike_c": 17.5,
             "wind_kph": 13.0,
-            "uv": 6.0
+            "uv": 6.0,
+            "cloud": 30,
+            "vis_km": 9.0,
+            "snow_cm": 0.0
           }
         ],
         "astro": {
@@ -106,7 +115,8 @@
           "daily_chance_of_snow": 0,
           "totalprecip_mm": 3.2,
           "maxwind_kph": 25.2,
-          "uv": 5.0
+          "uv": 5.0,
+          "totalsnow_cm": 0.0
         },
         "hour": [
           {
@@ -125,7 +135,10 @@
             "precip_mm": 2.4,
             "feelslike_c": 11.0,
             "wind_kph": 18.0,
-            "uv": 0.0
+            "uv": 0.0,
+            "cloud": 100,
+            "vis_km": 2.5,
+            "snow_cm": 1.2
           }
         ],
         "astro": {
@@ -149,7 +162,8 @@
           "daily_chance_of_snow": 10,
           "totalprecip_mm": 6.5,
           "maxwind_kph": 30.0,
-          "uv": 3.0
+          "uv": 3.0,
+          "totalsnow_cm": 3.5
         },
         "hour": [],
         "astro": {

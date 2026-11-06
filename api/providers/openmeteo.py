@@ -27,15 +27,16 @@ _NOMINATIM_USER_AGENT = os.getenv(
 
 _CURRENT_VARS = (
     'temperature_2m,apparent_temperature,weather_code,is_day,relative_humidity_2m,'
-    'wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,precipitation'
+    'wind_speed_10m,wind_direction_10m,wind_gusts_10m,uv_index,precipitation,cloud_cover,visibility'
 )
 _HOURLY_VARS = (
     'temperature_2m,relative_humidity_2m,weather_code,is_day,precipitation_probability,'
-    'precipitation,apparent_temperature,wind_speed_10m,uv_index'
+    'precipitation,apparent_temperature,wind_speed_10m,uv_index,cloud_cover,visibility,snowfall'
 )
 _DAILY_VARS = (
     'temperature_2m_max,temperature_2m_min,weather_code,relative_humidity_2m_max,'
-    'precipitation_probability_max,precipitation_sum,wind_speed_10m_max,uv_index_max,sunrise,sunset'
+    'precipitation_probability_max,precipitation_sum,wind_speed_10m_max,uv_index_max,sunrise,sunset,'
+    'snowfall_sum'
 )
 _MINUTELY_STEPS = 8  # 8 x 15 min = next 2 hours
 
@@ -46,6 +47,11 @@ def _at(block: dict, key: str, i: int):
     if values is None or i >= len(values):
         return None
     return values[i]
+
+
+def _m_to_km(meters):
+    """Open-Meteo reports visibility in meters; the API exposes km like WeatherAPI."""
+    return None if meters is None else round(meters / 1000, 2)
 
 
 class OpenMeteoProvider(WeatherProvider):
@@ -129,6 +135,8 @@ class OpenMeteoProvider(WeatherProvider):
                 gust_kph=current.get('wind_gusts_10m'),
                 uv=current.get('uv_index'),
                 precip_mm=current.get('precipitation'),
+                cloud_cover=current.get('cloud_cover'),
+                visibility_km=_m_to_km(current.get('visibility')),
             ),
             next_24h=self._build_24h(now_hour, hourly, tz_id, lang_iso),
             next_days=self._build_days(daily, tz_id, lang_iso),
@@ -235,6 +243,9 @@ class OpenMeteoProvider(WeatherProvider):
                     feels_like=_at(hourly, 'apparent_temperature', i),
                     wind_kph=_at(hourly, 'wind_speed_10m', i),
                     uv=_at(hourly, 'uv_index', i),
+                    cloud_cover=_at(hourly, 'cloud_cover', i),
+                    visibility_km=_m_to_km(_at(hourly, 'visibility', i)),
+                    snow_cm=_at(hourly, 'snowfall', i),
                 ))
         return result
 
@@ -264,6 +275,7 @@ class OpenMeteoProvider(WeatherProvider):
                 uv=_at(daily, 'uv_index_max', i),
                 sunrise=local_to_epoch(_at(daily, 'sunrise', i), None, tz_id),
                 sunset=local_to_epoch(_at(daily, 'sunset', i), None, tz_id),
+                total_snow_cm=_at(daily, 'snowfall_sum', i),
             ))
         return result
 

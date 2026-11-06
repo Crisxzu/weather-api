@@ -317,3 +317,35 @@ class OpenMeteoV2FieldsTests(TestCase):
             self._get(mock_get)
         forecast_call = next(c for c in mock_get.call_args_list if 'api.open-meteo.com' in c[0][0])
         self.assertEqual(forecast_call[1]['params']['forecast_days'], 7)
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoSkyAndSnowTests(TestCase):
+
+    def _get(self, mock_get, forecast=None):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast or _load_fixture('openmeteo_response.json'))
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_current_cloud_cover_and_visibility_in_km(self, mock_get, _now):
+        current = self._get(mock_get).current
+        self.assertEqual(current.cloud_cover, 25)
+        self.assertEqual(current.visibility_km, 24.14)
+
+    def test_hourly_cloud_visibility_snow(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        forecast['hourly']['snowfall'] = [1.4] * len(forecast['hourly']['time'])
+        hour = self._get(mock_get, forecast).next_24h[0]
+        i = forecast['hourly']['time'].index('2025-06-01T12:00')
+        self.assertEqual(hour.cloud_cover, forecast['hourly']['cloud_cover'][i])
+        self.assertEqual(hour.visibility_km, forecast['hourly']['visibility'][i] / 1000)
+        self.assertEqual(hour.snow_cm, 1.4)
+
+    def test_fog_visibility_is_kept_precise(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        i = forecast['hourly']['time'].index('2025-06-01T12:00')
+        forecast['hourly']['visibility'][i] = 350.0
+        self.assertEqual(self._get(mock_get, forecast).next_24h[0].visibility_km, 0.35)
+
+    def test_daily_total_snow(self, mock_get, _now):
+        self.assertEqual(self._get(mock_get).next_days[2].total_snow_cm, 3.5)

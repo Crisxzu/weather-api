@@ -252,3 +252,31 @@ class WeatherAPIProviderUnknownConditionTests(TestCase):
         self.assertEqual(result.current.condition.code, 1999)
         self.assertEqual(result.current.condition.text, 'Volcanic ash')
         self.assertEqual(result.current.condition.icon, 143)
+
+
+class WeatherAPIProviderSkyAndSnowTests(TestCase):
+
+    def _get(self, mock_get):
+        mock_get.return_value = _mock_response(_load_fixture('weatherapi_response.json'))
+        return WeatherAPIProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_current_cloud_cover_and_visibility(self, mock_get):
+        current = self._get(mock_get).current
+        self.assertEqual(current.cloud_cover, 25)
+        self.assertEqual(current.visibility_km, 10.0)
+
+    @patch('api.providers.weatherapi.requests.get')
+    @patch('api.providers.weatherapi.get_time_for_timezone')
+    def test_hourly_cloud_visibility_snow(self, mock_now, mock_get):
+        import pytz
+        from datetime import datetime
+        mock_now.return_value = pytz.timezone('Europe/Paris').localize(datetime(2025, 6, 1, 2, 0))  # 00:00 UTC: all 3 fixture hours in the window
+        hours = self._get(mock_get).next_24h
+        self.assertEqual(hours[2].cloud_cover, 100)
+        self.assertEqual(hours[2].visibility_km, 2.5)
+        self.assertEqual(hours[2].snow_cm, 1.2)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_daily_total_snow(self, mock_get):
+        self.assertEqual(self._get(mock_get).next_days[2].total_snow_cm, 3.5)

@@ -43,6 +43,8 @@ class CurrentWeatherSerializer(serializers.Serializer):
     gust_kph = serializers.FloatField(**_non_negative)
     uv = serializers.FloatField(**_non_negative)
     precip_mm = serializers.FloatField(**_non_negative)
+    cloud_cover = serializers.FloatField(**_percent)
+    visibility_km = serializers.FloatField(**_non_negative)
 
 class HourlyForecastSerializer(serializers.Serializer):
     temp = serializers.FloatField(**temp_interval)
@@ -57,6 +59,9 @@ class HourlyForecastSerializer(serializers.Serializer):
     feels_like = _nullable_temp()
     wind_kph = serializers.FloatField(**_non_negative)
     uv = serializers.FloatField(**_non_negative)
+    cloud_cover = serializers.FloatField(**_percent)
+    visibility_km = serializers.FloatField(**_non_negative)
+    snow_cm = serializers.FloatField(**_non_negative)
 
 class DailyForecastSerializer(serializers.Serializer):
     min_temp = serializers.FloatField(**temp_interval)
@@ -73,6 +78,7 @@ class DailyForecastSerializer(serializers.Serializer):
     uv = serializers.FloatField(**_non_negative)
     sunrise = serializers.IntegerField(allow_null=True)
     sunset = serializers.IntegerField(allow_null=True)
+    total_snow_cm = serializers.FloatField(**_non_negative)
 
 class MinutelyPrecipitationSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField()
