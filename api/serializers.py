@@ -3,6 +3,17 @@ from rest_framework import serializers
 temp_interval = {'min_value': -273.17, 'max_value': 90.0}
 humidity_interval = {'min_value': 0, 'max_value': 100}
 
+# v2 fields: always nullable, and only lower-bounded where a negative value is
+# physically impossible. The view validates its own output, so an over-strict
+# bound here would turn an unusual provider value into a 500.
+_percent = {'min_value': 0, 'max_value': 100, 'allow_null': True}
+_non_negative = {'min_value': 0, 'allow_null': True}
+
+
+def _nullable_temp():
+    return serializers.FloatField(**temp_interval, allow_null=True)
+
+
 class ConditionSerializer(serializers.Serializer):
     code = serializers.IntegerField()
     text = serializers.CharField(max_length=200)
@@ -25,6 +36,13 @@ class CurrentWeatherSerializer(serializers.Serializer):
     is_day = serializers.BooleanField()
     feels_like = serializers.FloatField(**temp_interval)
     condition = ConditionSerializer()
+    # v2
+    humidity = serializers.FloatField(**_percent)
+    wind_kph = serializers.FloatField(**_non_negative)
+    wind_degree = serializers.FloatField(min_value=0, max_value=360, allow_null=True)
+    gust_kph = serializers.FloatField(**_non_negative)
+    uv = serializers.FloatField(**_non_negative)
+    precip_mm = serializers.FloatField(**_non_negative)
 
 class HourlyForecastSerializer(serializers.Serializer):
     temp = serializers.FloatField(**temp_interval)
@@ -32,6 +50,13 @@ class HourlyForecastSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField()
     is_day = serializers.BooleanField()
     condition = ConditionSerializer()
+    # v2
+    chance_of_rain = serializers.FloatField(**_percent)
+    chance_of_snow = serializers.FloatField(**_percent)
+    precip_mm = serializers.FloatField(**_non_negative)
+    feels_like = _nullable_temp()
+    wind_kph = serializers.FloatField(**_non_negative)
+    uv = serializers.FloatField(**_non_negative)
 
 class DailyForecastSerializer(serializers.Serializer):
     min_temp = serializers.FloatField(**temp_interval)
@@ -40,6 +65,25 @@ class DailyForecastSerializer(serializers.Serializer):
     timestamp = serializers.IntegerField()
     is_day = serializers.BooleanField()
     condition = ConditionSerializer()
+    # v2
+    chance_of_rain = serializers.FloatField(**_percent)
+    chance_of_snow = serializers.FloatField(**_percent)
+    total_precip_mm = serializers.FloatField(**_non_negative)
+    max_wind_kph = serializers.FloatField(**_non_negative)
+    uv = serializers.FloatField(**_non_negative)
+    sunrise = serializers.IntegerField(allow_null=True)
+    sunset = serializers.IntegerField(allow_null=True)
+
+class MinutelyPrecipitationSerializer(serializers.Serializer):
+    timestamp = serializers.IntegerField()
+    precip_mm = serializers.FloatField(**_non_negative)
+
+class WeatherAlertSerializer(serializers.Serializer):
+    event = serializers.CharField(allow_blank=True)
+    headline = serializers.CharField(allow_blank=True)
+    severity = serializers.CharField(allow_blank=True)
+    effective = serializers.IntegerField(allow_null=True)
+    expires = serializers.IntegerField(allow_null=True)
 
 class WeatherDataSerializer(serializers.Serializer):
     last_updated = serializers.IntegerField()
@@ -49,3 +93,6 @@ class WeatherDataSerializer(serializers.Serializer):
     current = CurrentWeatherSerializer()
     next_24h = HourlyForecastSerializer(many=True)
     next_days = DailyForecastSerializer(many=True)
+    # v2 — null = not supported by the provider that answered
+    next_minutes = MinutelyPrecipitationSerializer(many=True, allow_null=True)
+    alerts = WeatherAlertSerializer(many=True, allow_null=True)

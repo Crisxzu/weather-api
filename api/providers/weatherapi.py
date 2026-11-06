@@ -1,16 +1,18 @@
 import logging
 import os
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import requests
 
-from api.providers.base import WeatherProvider, WeatherServiceError, WeatherServiceUnavailableError
+from api.providers.base import (
+    WeatherProvider, WeatherServiceError, WeatherServiceUnavailableError, get_forecast_days,
+)
 from api.providers.schemas import (
-    Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, WeatherData,
+    Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, WeatherAlert, WeatherData,
 )
 from api.utils.conditions import get_condition_by_code
-from api.utils.timezone import get_time_for_timezone
+from api.utils.timezone import get_time_for_timezone, local_to_epoch
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,34 @@ def _condition(cond: dict, is_day, lang_iso) -> Condition:
     )
 
 
+def _iso_to_epoch(value: str | None) -> int | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
+def parse_alerts(alerts_block: dict | None) -> list[WeatherAlert] | None:
+    """Map WeatherAPI's {"alert": [...]} block. None if the block is absent."""
+    if alerts_block is None:
+        return None
+    return [
+        WeatherAlert(
+            event=a.get('event') or '',
+            headline=a.get('headline') or '',
+            severity=a.get('severity') or '',
+            effective=_iso_to_epoch(a.get('effective')),
+            expires=_iso_to_epoch(a.get('expires')),
+        )
+        for a in alerts_block.get('alert') or []
+    ]
+
+
 class WeatherAPIProvider(WeatherProvider):
 
     @property
@@ -39,9 +69,9 @@ class WeatherAPIProvider(WeatherProvider):
         url = f"{os.getenv('WEATHER_API_BASE_URL')}/forecast.json"
         params = {
             'key': os.getenv('WEATHER_API_KEY'),
-            'days': 3,
+            'days': get_forecast_days(),
             'aqi': 'no',
-            'alerts': 'no',
+            'alerts': 'yes',
         }
 
         if position and re.match(_position_regex, position):
@@ -81,6 +111,7 @@ class WeatherAPIProvider(WeatherProvider):
         current_is_day = bool(data['current']['is_day'])
         forecast_days = data['forecast']['forecastday']
         loc = data['location']
+        cur = data['current']
 
         return WeatherData(
             last_updated=data['current']['last_updated_epoch'],
@@ -103,9 +134,18 @@ class WeatherAPIProvider(WeatherProvider):
                 is_day=current_is_day,
                 feels_like=data['current']['feelslike_c'],
                 condition=_condition(data['current']['condition'], current_is_day, lang_iso),
+                humidity=cur.get('humidity'),
+                wind_kph=cur.get('wind_kph'),
+                wind_degree=cur.get('wind_degree'),
+                gust_kph=cur.get('gust_kph'),
+                uv=cur.get('uv'),
+                precip_mm=cur.get('precip_mm'),
             ),
             next_24h=self._build_24h(now_hour, forecast_days, lang_iso),
-            next_days=self._build_days(forecast_days, lang_iso),
+            next_days=self._build_days(forecast_days, loc['tz_id'], lang_iso),
+            # 15-minute precipitation is not available on standard WeatherAPI plans.
+            next_minutes=None,
+            alerts=parse_alerts(data.get('alerts')),
         )
 
     def _build_24h(self, now_hour, forecast_days, lang_iso) -> list[HourlyForecast]:
@@ -121,12 +161,18 @@ class WeatherAPIProvider(WeatherProvider):
                 timestamp=h['time_epoch'],
                 is_day=h['is_day'],
                 condition=_condition(h['condition'], h['is_day'], lang_iso),
+                chance_of_rain=h.get('chance_of_rain'),
+                chance_of_snow=h.get('chance_of_snow'),
+                precip_mm=h.get('precip_mm'),
+                feels_like=h.get('feelslike_c'),
+                wind_kph=h.get('wind_kph'),
+                uv=h.get('uv'),
             )
             for h in forecast_hours
             if now_hour.timestamp() <= h['time_epoch'] <= datetime_in_24h.timestamp()
         ]
 
-    def _build_days(self, forecast_days, lang_iso) -> list[DailyForecast]:
+    def _build_days(self, forecast_days, tz_id, lang_iso) -> list[DailyForecast]:
         return [
             DailyForecast(
                 min_temp=d['day']['mintemp_c'],
@@ -135,6 +181,21 @@ class WeatherAPIProvider(WeatherProvider):
                 timestamp=d['date_epoch'],
                 is_day=True,
                 condition=_condition(d['day']['condition'], True, lang_iso),
+                chance_of_rain=d['day'].get('daily_chance_of_rain'),
+                chance_of_snow=d['day'].get('daily_chance_of_snow'),
+                total_precip_mm=d['day'].get('totalprecip_mm'),
+                max_wind_kph=d['day'].get('maxwind_kph'),
+                uv=d['day'].get('uv'),
+                sunrise=self._astro_epoch(d, 'sunrise', tz_id),
+                sunset=self._astro_epoch(d, 'sunset', tz_id),
             )
             for d in forecast_days
         ]
+
+    @staticmethod
+    def _astro_epoch(forecast_day: dict, key: str, tz_id: str) -> int | None:
+        # astro times are local wall-clock like "07:45 AM", or "No sunrise" near the poles.
+        value = (forecast_day.get('astro') or {}).get(key)
+        if not value:
+            return None
+        return local_to_epoch(f"{forecast_day['date']} {value}", '%Y-%m-%d %I:%M %p', tz_id)

@@ -16,6 +16,8 @@ from api.serializers import WeatherDataSerializer
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = int(os.getenv('WEATHER_CACHE_TTL', 3600))
+# Shorter TTL when the response carries 15-minute precipitation ("rain in ~20 min").
+NOWCAST_CACHE_TTL = int(os.getenv('WEATHER_NOWCAST_CACHE_TTL', 900))
 
 _position_regex = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$')
 POSITION_PRECISION = 2  # ~1.1 km: nearby users share cache entries and upstream calls
@@ -31,7 +33,6 @@ def round_position(position: str | None) -> str | None:
     # "+ 0.0" turns -0.0 into 0.0 so both spellings share one cache key
     lat, lon = (round(float(g), POSITION_PRECISION) + 0.0 for g in m.groups())
     return f'{lat:.{POSITION_PRECISION}f},{lon:.{POSITION_PRECISION}f}'
-
 
 
 class WeatherDataView(APIView):
@@ -81,8 +82,9 @@ class WeatherDataView(APIView):
             logger.error('Serializer validation failed: %s', serializer.errors)
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        cache.set(cache_key, serializer.data, CACHE_TTL)
-        logger.info('Weather data cached for key=%s (TTL=%ss)', cache_key, CACHE_TTL)
+        ttl = min(CACHE_TTL, NOWCAST_CACHE_TTL) if serializer.data.get('next_minutes') else CACHE_TTL
+        cache.set(cache_key, serializer.data, ttl)
+        logger.info('Weather data cached for key=%s (TTL=%ss)', cache_key, ttl)
         return Response(serializer.data)
 
     def _fetch_with_fallback(self, query_kwargs: dict) -> dict:

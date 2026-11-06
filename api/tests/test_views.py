@@ -231,7 +231,7 @@ class PositionRoundingTests(TestCase):
         self.assertIsNone(round_position(None))
 
 
-class WeatherViewPositionRoundingTests(TestCase):
+class WeatherViewV2Tests(TestCase):
 
     def setUp(self):
         cache.clear()
@@ -250,3 +250,61 @@ class WeatherViewPositionRoundingTests(TestCase):
 
         provider.get_weather.assert_called_once()
         self.assertEqual(provider.get_weather.call_args[1]['position'], '48.86,2.35')
+
+    @patch('api.views.get_primary_provider')
+    def test_v2_blocks_are_null_when_unsupported(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertIsNone(data['next_minutes'])
+        self.assertIsNone(data['alerts'])
+        self.assertIn('chance_of_rain', data['next_24h'][0])
+        self.assertIsNone(data['next_24h'][0]['chance_of_rain'])
+
+    @patch('api.views.get_primary_provider')
+    def test_v2_fields_are_serialized(self, mock_registry):
+        from api.providers.schemas import MinutelyPrecipitation, WeatherAlert
+        provider = MagicMock()
+        weather = _make_weather_data(
+            next_minutes=[MinutelyPrecipitation(timestamp=1748772000, precip_mm=0.4)],
+            alerts=[WeatherAlert(event='Storm', headline='Orages', severity='Moderate', effective=1, expires=None)],
+        )
+        weather.next_24h[0].chance_of_rain = 80
+        weather.next_days[0].sunrise = 1748749620
+        provider.get_weather.return_value = weather
+        mock_registry.return_value = provider
+
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertEqual(data['next_minutes'], [{'timestamp': 1748772000, 'precip_mm': 0.4}])
+        self.assertEqual(data['alerts'][0]['event'], 'Storm')
+        self.assertIsNone(data['alerts'][0]['expires'])
+        self.assertEqual(data['next_24h'][0]['chance_of_rain'], 80)
+        self.assertEqual(data['next_days'][0]['sunrise'], 1748749620)
+
+    @patch('api.views.cache.set')
+    @patch('api.views.get_primary_provider')
+    def test_short_ttl_when_next_minutes_present(self, mock_registry, mock_cache_set):
+        from api.providers.schemas import MinutelyPrecipitation
+        from api.views import NOWCAST_CACHE_TTL
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data(
+            next_minutes=[MinutelyPrecipitation(timestamp=1748772000, precip_mm=0.0)],
+        )
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.assertEqual(mock_cache_set.call_args[0][2], NOWCAST_CACHE_TTL)
+
+    @patch('api.views.cache.set')
+    @patch('api.views.get_primary_provider')
+    def test_default_ttl_without_next_minutes(self, mock_registry, mock_cache_set):
+        from api.views import CACHE_TTL
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.assertEqual(mock_cache_set.call_args[0][2], CACHE_TTL)
+

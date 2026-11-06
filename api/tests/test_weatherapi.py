@@ -135,6 +135,109 @@ class WeatherAPIProviderErrorTests(TestCase):
         self.assertEqual(ctx.exception.error_code, 2006)
 
 
+# 2025-06-01 00:00 UTC; Paris is UTC+2 in June
+_UTC_MIDNIGHT_2025_06_01 = 1748736000
+
+
+class WeatherAPIProviderV2FieldsTests(TestCase):
+
+    def _get(self, mock_get, data=None):
+        mock_get.return_value = _mock_response(data or _load_fixture('weatherapi_response.json'))
+        return WeatherAPIProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_requests_alerts(self, mock_get):
+        self._get(mock_get)
+        self.assertEqual(mock_get.call_args[1]['params']['alerts'], 'yes')
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_forecast_days_follows_env(self, mock_get):
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '7'}):
+            self._get(mock_get)
+        self.assertEqual(mock_get.call_args[1]['params']['days'], 7)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_current_v2_fields(self, mock_get):
+        current = self._get(mock_get).current
+        self.assertEqual(current.humidity, 62)
+        self.assertEqual(current.wind_kph, 14.4)
+        self.assertEqual(current.wind_degree, 250)
+        self.assertEqual(current.gust_kph, 22.3)
+        self.assertEqual(current.uv, 6.0)
+        self.assertEqual(current.precip_mm, 0.0)
+
+    @patch('api.providers.weatherapi.requests.get')
+    @patch('api.providers.weatherapi.get_time_for_timezone')
+    def test_hourly_v2_fields(self, mock_now, mock_get):
+        import pytz
+        from datetime import datetime
+        mock_now.return_value = pytz.timezone('Europe/Paris').localize(datetime(2025, 6, 1, 0, 0))
+        hours = self._get(mock_get).next_24h
+        self.assertEqual(hours[1].chance_of_rain, 20)
+        self.assertEqual(hours[1].chance_of_snow, 0)
+        self.assertEqual(hours[1].precip_mm, 0.1)
+        self.assertEqual(hours[1].feels_like, 17.5)
+        self.assertEqual(hours[1].wind_kph, 13.0)
+        self.assertEqual(hours[1].uv, 6.0)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_daily_v2_fields(self, mock_get):
+        day = self._get(mock_get).next_days[2]
+        self.assertEqual(day.chance_of_rain, 80)
+        self.assertEqual(day.chance_of_snow, 10)
+        self.assertEqual(day.total_precip_mm, 6.5)
+        self.assertEqual(day.max_wind_kph, 30.0)
+        self.assertEqual(day.uv, 3.0)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_sunrise_sunset_converted_with_location_timezone(self, mock_get):
+        day = self._get(mock_get).next_days[0]
+        # 05:47 AM / 09:50 PM CEST — same instants Open-Meteo yields for its fixture
+        self.assertEqual(day.sunrise, _UTC_MIDNIGHT_2025_06_01 + 3 * 3600 + 47 * 60)
+        self.assertEqual(day.sunset, _UTC_MIDNIGHT_2025_06_01 + 19 * 3600 + 50 * 60)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_polar_no_sunrise_gives_null(self, mock_get):
+        day = self._get(mock_get).next_days[2]
+        self.assertIsNone(day.sunrise)
+        self.assertIsNone(day.sunset)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_alerts_are_mapped(self, mock_get):
+        alerts = self._get(mock_get).alerts
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0].event, 'Thunderstorm warning')
+        self.assertEqual(alerts[0].headline, 'Orages violents')
+        self.assertEqual(alerts[0].severity, 'Moderate')
+        self.assertEqual(alerts[0].effective, _UTC_MIDNIGHT_2025_06_01 + 12 * 3600)
+        self.assertEqual(alerts[0].expires, _UTC_MIDNIGHT_2025_06_01 + 20 * 3600)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_no_alert_gives_empty_list(self, mock_get):
+        data = _load_fixture('weatherapi_response.json')
+        data['alerts'] = {'alert': []}
+        self.assertEqual(self._get(mock_get, data).alerts, [])
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_missing_alerts_block_gives_null(self, mock_get):
+        data = _load_fixture('weatherapi_response.json')
+        del data['alerts']
+        self.assertIsNone(self._get(mock_get, data).alerts)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_next_minutes_is_null(self, mock_get):
+        self.assertIsNone(self._get(mock_get).next_minutes)
+
+    @patch('api.providers.weatherapi.requests.get')
+    def test_missing_v2_fields_do_not_crash(self, mock_get):
+        data = _load_fixture('weatherapi_response.json')
+        del data['current']['uv']
+        del data['forecast']['forecastday'][0]['astro']
+        result = self._get(mock_get, data)
+        self.assertIsNone(result.current.uv)
+        self.assertIsNone(result.next_days[0].sunrise)
+
+
 class WeatherAPIProviderUnknownConditionTests(TestCase):
 
     @patch('api.providers.weatherapi.requests.get')
