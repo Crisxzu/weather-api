@@ -18,6 +18,17 @@ _position_regex = r"-?\d+(\.\d+)?,-?\d+(\.\d+)?"
 _ip_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
 
 
+def _condition(cond: dict, is_day, lang_iso) -> Condition:
+    code = cond['code']
+    return Condition(
+        code=code,
+        # Codes missing from conditions.json (e.g. 1036 "Smoky haze", added by WeatherAPI
+        # later) would give a null text, fail validation and return a 500.
+        text=get_condition_by_code(code, is_day, lang_iso) or cond.get('text') or '',
+        icon=int(cond['icon'].split('/')[-1].split('.')[0]),
+    )
+
+
 class WeatherAPIProvider(WeatherProvider):
 
     @property
@@ -91,11 +102,7 @@ class WeatherAPIProvider(WeatherProvider):
                 max_temp=forecast_days[0]['day']['maxtemp_c'],
                 is_day=current_is_day,
                 feels_like=data['current']['feelslike_c'],
-                condition=Condition(
-                    code=data['current']['condition']['code'],
-                    text=get_condition_by_code(data['current']['condition']['code'], current_is_day, lang_iso),
-                    icon=int(data['current']['condition']['icon'].split('/')[-1].split('.')[0]),
-                ),
+                condition=_condition(data['current']['condition'], current_is_day, lang_iso),
             ),
             next_24h=self._build_24h(now_hour, forecast_days, lang_iso),
             next_days=self._build_days(forecast_days, lang_iso),
@@ -113,11 +120,7 @@ class WeatherAPIProvider(WeatherProvider):
                 humidity=h['humidity'],
                 timestamp=h['time_epoch'],
                 is_day=h['is_day'],
-                condition=Condition(
-                    code=h['condition']['code'],
-                    text=get_condition_by_code(h['condition']['code'], h['is_day'], lang_iso),
-                    icon=int(h['condition']['icon'].split('/')[-1].split('.')[0]),
-                ),
+                condition=_condition(h['condition'], h['is_day'], lang_iso),
             )
             for h in forecast_hours
             if now_hour.timestamp() <= h['time_epoch'] <= datetime_in_24h.timestamp()
@@ -131,11 +134,7 @@ class WeatherAPIProvider(WeatherProvider):
                 humidity=d['day']['avghumidity'],
                 timestamp=d['date_epoch'],
                 is_day=True,
-                condition=Condition(
-                    code=d['day']['condition']['code'],
-                    text=get_condition_by_code(d['day']['condition']['code'], True, lang_iso),
-                    icon=int(d['day']['condition']['icon'].split('/')[-1].split('.')[0]),
-                ),
+                condition=_condition(d['day']['condition'], True, lang_iso),
             )
             for d in forecast_days
         ]
