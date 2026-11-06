@@ -10,7 +10,7 @@ from api.providers.schemas import (
 )
 from api.utils.conditions import get_condition_by_code, get_condition_by_wmo_code
 from api.utils.ip_geolocation import resolve_ip
-from api.utils.timezone import get_time_for_timezone
+from api.utils.timezone import get_time_for_timezone, local_to_epoch
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ class OpenMeteoProvider(WeatherProvider):
                     icon=mapped.icon,
                 ),
             ),
-            next_24h=self._build_24h(now_hour, hourly, lang_iso),
+            next_24h=self._build_24h(now_hour, hourly, tz_id, lang_iso),
             next_days=self._build_days(daily, lang_iso),
         )
 
@@ -165,7 +165,7 @@ class OpenMeteoProvider(WeatherProvider):
 
         return resp.json()
 
-    def _build_24h(self, now_hour, hourly, lang_iso) -> list[HourlyForecast]:
+    def _build_24h(self, now_hour, hourly, tz_id, lang_iso) -> list[HourlyForecast]:
         limit = now_hour + timedelta(hours=24)
         times = hourly['time']
         temps = hourly['temperature_2m']
@@ -175,8 +175,9 @@ class OpenMeteoProvider(WeatherProvider):
 
         result = []
         for i, time_str in enumerate(times):
-            ts = int(datetime.fromisoformat(time_str).replace(tzinfo=timezone.utc).timestamp())
-            if now_hour.timestamp() <= ts <= limit.timestamp():
+            # With timezone=auto, Open-Meteo returns wall-clock times in the location's timezone.
+            ts = local_to_epoch(time_str, None, tz_id)
+            if ts is not None and now_hour.timestamp() <= ts <= limit.timestamp():
                 is_day = bool(is_days[i])
                 mapped = get_condition_by_wmo_code(codes[i])
                 result.append(HourlyForecast(
@@ -195,6 +196,9 @@ class OpenMeteoProvider(WeatherProvider):
     def _build_days(self, daily, lang_iso) -> list[DailyForecast]:
         result = []
         for i, date_str in enumerate(daily['time']):
+            # Day timestamps are midnight UTC of the calendar date, on purpose:
+            # it matches WeatherAPI's date_epoch, so clients see the same convention
+            # whichever provider answered.
             ts = int(datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc).timestamp())
             mapped = get_condition_by_wmo_code(daily['weather_code'][i])
             result.append(DailyForecast(

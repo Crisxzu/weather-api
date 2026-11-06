@@ -197,3 +197,38 @@ class OpenMeteoProviderErrorTests(TestCase):
         mock_get.side_effect = side_effect
         with self.assertRaises(WeatherServiceUnavailableError):
             OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')
+
+
+def _frozen_paris_now(_tz_id):
+    import pytz
+    from datetime import datetime
+    return pytz.timezone('Europe/Paris').localize(datetime(2025, 6, 1, 12, 30))
+
+
+# 2025-06-01 12:00 Europe/Paris (CEST, UTC+2) == 10:00 UTC
+_PARIS_NOON_EPOCH = 1748772000
+_UTC_MIDNIGHT_2025_06_01 = 1748736000
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoTimestampTests(TestCase):
+
+    def _get(self, mock_get, forecast=None):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast or _load_fixture('openmeteo_response.json'))
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_hourly_times_are_read_in_location_timezone(self, mock_get, _now):
+        result = self._get(mock_get)
+        # Local 12:00 must be 10:00 UTC, not 12:00 UTC (the old +2h shift).
+        self.assertEqual(result.next_24h[0].timestamp, _PARIS_NOON_EPOCH)
+
+    def test_next_24h_window_starts_at_current_local_hour(self, mock_get, _now):
+        result = self._get(mock_get)
+        # 12:00 today through 12:00 tomorrow, inclusive
+        self.assertEqual(len(result.next_24h), 25)
+        self.assertEqual(result.next_24h[-1].timestamp, _PARIS_NOON_EPOCH + 24 * 3600)
+
+    def test_day_timestamps_stay_utc_midnight_like_weatherapi(self, mock_get, _now):
+        result = self._get(mock_get)
+        self.assertEqual(result.next_days[0].timestamp, _UTC_MIDNIGHT_2025_06_01)
