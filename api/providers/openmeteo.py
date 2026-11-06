@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -19,6 +20,10 @@ _position_regex = re.compile(r'^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$')
 _FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
 _GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 _NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse'
+# Nominatim's usage policy requires an identifying User-Agent.
+_NOMINATIM_USER_AGENT = os.getenv(
+    'NOMINATIM_USER_AGENT', 'WeatherAppApi/1.0 (+https://github.com/Crisxzu/weather-api)'
+)
 
 
 class OpenMeteoProvider(WeatherProvider):
@@ -128,7 +133,7 @@ class OpenMeteoProvider(WeatherProvider):
             resp = requests.get(
                 _NOMINATIM_URL,
                 params={'lat': lat, 'lon': lon, 'format': 'json'},
-                headers={'User-Agent': 'WeatherAppApi/1.0'},
+                headers={'User-Agent': _NOMINATIM_USER_AGENT},
                 timeout=5,
             )
             if resp.status_code == 200:
