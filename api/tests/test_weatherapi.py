@@ -243,11 +243,12 @@ class WeatherAPIProviderUnknownConditionTests(TestCase):
     @patch('api.providers.weatherapi.requests.get')
     def test_unknown_condition_code_falls_back_to_provider_text(self, mock_get):
         data = _load_fixture('weatherapi_response.json')
+        # A code WeatherAPI may add before conditions.json is refreshed
         data['current']['condition'] = {
-            'text': 'Smoky haze', 'icon': '//cdn.weatherapi.com/weather/64x64/night/143.png', 'code': 1036,
+            'text': 'Volcanic ash', 'icon': '//cdn.weatherapi.com/weather/64x64/night/143.png', 'code': 1999,
         }
         mock_get.return_value = _mock_response(data)
         result = WeatherAPIProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='fr')
-        self.assertEqual(result.current.condition.code, 1036)
-        self.assertEqual(result.current.condition.text, 'Smoky haze')
+        self.assertEqual(result.current.condition.code, 1999)
+        self.assertEqual(result.current.condition.text, 'Volcanic ash')
         self.assertEqual(result.current.condition.icon, 143)

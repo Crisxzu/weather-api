@@ -24,8 +24,8 @@ def _condition(cond: dict, is_day, lang_iso) -> Condition:
     code = cond['code']
     return Condition(
         code=code,
-        # Codes missing from conditions.json (e.g. 1036 "Smoky haze", added by WeatherAPI
-        # later) would give a null text, fail validation and return a 500.
+        # A code missing from conditions.json (WeatherAPI adds some over time, see
+        # `manage.py update_conditions`) would give a null text, fail validation and return a 500.
         text=get_condition_by_code(code, is_day, lang_iso) or cond.get('text') or '',
         icon=int(cond['icon'].split('/')[-1].split('.')[0]),
     )
