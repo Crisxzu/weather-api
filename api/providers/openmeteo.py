@@ -11,6 +11,7 @@ from api.providers.schemas import (
     YesterdayWeather,
 )
 from api.utils.conditions import get_condition_by_code, get_condition_by_wmo_code
+from api.utils.geocoding import search_places
 from api.utils.ip_geolocation import resolve_ip
 from api.utils.timezone import get_time_for_timezone, local_to_epoch
 
@@ -19,7 +20,6 @@ logger = logging.getLogger(__name__)
 _position_regex = re.compile(r'^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$')
 
 _FORECAST_URL = 'https://api.open-meteo.com/v1/forecast'
-_GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 _NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse'
 # Nominatim's usage policy requires an identifying User-Agent.
 _NOMINATIM_USER_AGENT = os.getenv(
@@ -155,26 +155,12 @@ class OpenMeteoProvider(WeatherProvider):
         )
 
     def _geocode_city(self, city: str, country_code: str | None = None) -> tuple[float, float]:
-        params = {'name': city, 'count': 10, 'language': 'en', 'format': 'json'}
-        try:
-            resp = requests.get(_GEOCODING_URL, params=params, timeout=5)
-        except requests.exceptions.RequestException as e:
-            raise WeatherServiceUnavailableError(f'Open-Meteo geocoding unreachable: {e}') from e
-
-        if resp.status_code != 200 or not resp.json().get('results'):
-            raise WeatherServiceUnavailableError('No location found for city: ' + city)
-
-        results = resp.json()['results']
-        if country_code:
-            cc = country_code.upper()
-            match = next((r for r in results if r.get('country_code', '').upper() == cc), None)
-            if match is None:
+        results = search_places(city, country_code=country_code)
+        if not results:
+            if country_code:
                 raise WeatherServiceUnavailableError(f'No location found for city "{city}" in country "{country_code}"')
-            result = match
-        else:
-            result = results[0]
-
-        return float(result['latitude']), float(result['longitude'])
+            raise WeatherServiceUnavailableError('No location found for city: ' + city)
+        return float(results[0]['latitude']), float(results[0]['longitude'])
 
     def _reverse_geocode(self, lat: float, lon: float) -> dict:
         try:

@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import re
@@ -13,7 +14,8 @@ from api.providers.air_quality import get_air_quality
 from api.providers.alerts import get_alerts
 from api.providers.base import WeatherServiceError, WeatherServiceUnavailableError
 from api.providers.registry import get_primary_provider, get_fallback_provider
-from api.serializers import WeatherDataSerializer
+from api.serializers import CitySerializer, WeatherDataSerializer
+from api.utils.geocoding import MAX_RESULTS, search_places
 
 logger = logging.getLogger(__name__)
 
@@ -104,3 +106,76 @@ class WeatherDataView(APIView):
             if fallback is None:
                 raise
             return fallback.get_weather(**query_kwargs)
+
+
+SEARCH_CACHE_TTL = int(os.getenv('WEATHER_SEARCH_CACHE_TTL', 86400))  # places rarely change
+SEARCH_MIN_LENGTH = 2  # Open-Meteo: 2 chars = exact match only, fuzzy from 3
+SEARCH_MAX_LENGTH = 100
+SEARCH_DEFAULT_LIMIT = 10
+_country_code_regex = re.compile(r'^[A-Za-z]{2}$')
+
+
+def _to_city(place: dict) -> dict:
+    return {
+        'id': place['id'],
+        'name': place['name'],
+        'region': place.get('admin1') or '',
+        'country': place.get('country') or '',
+        'country_code': (place.get('country_code') or '').upper(),
+        'lat': place['latitude'],
+        'lon': place['longitude'],
+        'population': place.get('population'),
+        'timezone': place.get('timezone') or '',
+    }
+
+
+class CitySearchView(APIView):
+    """City search for the Positions screen: GET /search?q=sain&lang_iso=fr&limit=10[&country_code=FR]"""
+    permission_classes = [HasAPIKey]
+
+    def get(self, request):
+        # Collapse whitespace so "saint  etienne " and "saint etienne" share results and cache.
+        q = ' '.join(request.query_params.get('q', '').split())
+        lang_iso = request.query_params.get('lang_iso') or 'en'
+        country_code = (request.query_params.get('country_code') or '').strip()
+
+        try:
+            limit = int(request.query_params.get('limit', SEARCH_DEFAULT_LIMIT))
+        except ValueError:
+            return Response({'error': 'limit must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+        limit = max(1, min(limit, MAX_RESULTS))
+
+        if country_code and not _country_code_regex.match(country_code):
+            return Response({'error': 'country_code must be a 2-letter ISO code'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(q) > SEARCH_MAX_LENGTH:
+            return Response({'error': f'q must be at most {SEARCH_MAX_LENGTH} characters'}, status=status.HTTP_400_BAD_REQUEST)
+        if len(q) < SEARCH_MIN_LENGTH:
+            return Response([])
+
+        # Open-Meteo takes a bare language code: "zh_tw" / "pt-BR" -> "zh" / "pt"
+        language = re.split(r'[_-]', lang_iso.strip())[0].lower() or 'en'
+        country_code = country_code.upper()
+
+        # Always fetch the maximum and slice, so every limit shares one cache entry.
+        # Hashed because the query is free text (spaces, accents) and cache keys must stay portable.
+        digest = hashlib.sha1(f'{q.lower()}|{language}|{country_code}'.encode()).hexdigest()
+        cache_key = f'search_{digest}'
+        cities = cache.get(cache_key)
+        if cities is None:
+            try:
+                places = search_places(q, language=language, count=MAX_RESULTS, country_code=country_code or None)
+            except WeatherServiceUnavailableError as e:
+                logger.error('City search unavailable: %s', e)
+                return Response({'error': str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            # Keep Open-Meteo's order (relevance, then population).
+            serializer = CitySerializer(
+                data=[_to_city(p) for p in places if p.get('id') is not None and 'latitude' in p and 'longitude' in p],
+                many=True,
+            )
+            if not serializer.is_valid():
+                logger.error('City search serializer validation failed: %s', serializer.errors)
+                return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            cities = serializer.data
+            cache.set(cache_key, cities, SEARCH_CACHE_TTL)
+
+        return Response(cities[:limit])

@@ -9,6 +9,7 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 - Conditions météo actuelles + prévisions 24h et multi-jours
 - Support multilingue des descriptions de conditions (`lang_iso`)
 - Localisation par coordonnées, ville ou adresse IP
+- Recherche de villes multilingue (`/api/v1/search`)
 - Architecture multi-providers avec fallback automatique
 - Cache Redis (production) ou mémoire (développement)
 - Authentification par clé API
@@ -68,6 +69,9 @@ API Django REST Framework fournissant des données météorologiques actuelles e
    WEATHER_AIR_QUALITY_PROVIDER=openmeteo   # vide = désactivé
    WEATHER_AIR_QUALITY_CACHE_TTL=3600
 
+   # Recherche de villes
+   WEATHER_SEARCH_CACHE_TTL=86400
+
    # Nominatim (reverse geocoding Open-Meteo) — User-Agent identifiable exigé
    NOMINATIM_USER_AGENT="WeatherAppApi/1.0 (+https://github.com/Crisxzu/weather-api)"
    ```
@@ -93,7 +97,7 @@ API Django REST Framework fournissant des données météorologiques actuelles e
 ### Endpoint
 
 ```
-GET /api/weather
+GET /api/v1/weather
 ```
 
 **Authentification :** header `Authorization: Api-Key <votre_clé>`
@@ -111,7 +115,7 @@ Si aucun paramètre n'est fourni, l'API utilise l'adresse IP du client. Les para
 
 **Exemple avec `country_code` :**
 ```
-GET /api/weather?city=Paris&country_code=FR&lang_iso=fr
+GET /api/v1/weather?city=Paris&country_code=FR&lang_iso=fr
 ```
 
 ### Exemple de réponse
@@ -251,6 +255,44 @@ Tous les champs ajoutés pour la v2 sont **nullables** : un provider qui ne sait
 | `403` | Clé API manquante ou invalide |
 | `503` | Provider météo indisponible (et fallback aussi en échec) |
 
+## Recherche de villes
+
+```
+GET /api/v1/search?q=sain&lang_iso=fr&limit=10
+```
+
+Même authentification que la météo. Sert à l'écran Positions : l'app enregistre `lat` / `lon` de la ville choisie et interroge ensuite la météo avec `position=` (pas d'ambiguïté entre homonymes, cache partagé avec les utilisateurs GPS de la zone).
+
+| Paramètre      | Description | Défaut |
+|----------------|-------------|--------|
+| `q`            | Texte tapé (100 caractères max). Moins de 2 caractères → `[]`. Open-Meteo ne fait de recherche approximative qu'à partir de 3 caractères (2 = correspondance exacte). | — |
+| `lang_iso`     | Langue des noms (« Londres » / « London »). `zh_tw` → `zh`. | `en` |
+| `limit`        | Nombre de résultats, ramené entre 1 et 20. | `10` |
+| `country_code` | Filtre par pays (ISO 3166-1 alpha-2). | — |
+
+Réponse : liste de villes dans l'ordre d'Open-Meteo (pertinence puis population, « Paris, France » avant « Paris, Texas ») :
+
+```json
+[
+  {
+    "id": 2988507,
+    "name": "Paris",
+    "region": "Île-de-France",
+    "country": "France",
+    "country_code": "FR",
+    "lat": 48.85341,
+    "lon": 2.3488,
+    "population": 2138551,
+    "timezone": "Europe/Paris"
+  }
+]
+```
+
+- `id` : identifiant GeoNames, stable, pour dédoublonner côté app.
+- `region` peut être vide, `population` peut être `null`.
+- Résultats mis en cache 24 h (`WEATHER_SEARCH_CACHE_TTL`) par requête normalisée (casse et espaces), langue et pays, toutes valeurs de `limit` confondues. Les recherches sans résultat sont aussi mises en cache.
+- `503` si le géocodage d'Open-Meteo est indisponible ou lent (> 5 s) : l'app peut réessayer. Côté app, attendre ~300 ms après la dernière frappe avant de chercher.
+
 ## Architecture multi-providers
 
 L'API supporte plusieurs sources météo configurables via les variables d'environnement `WEATHER_PRIMARY_PROVIDER` et `WEATHER_FALLBACK_PROVIDER`.
@@ -267,7 +309,7 @@ Configuration recommandée : Open-Meteo en principal (prévisions jusqu'à 16 jo
 ### Services tiers utilisés par Open-Meteo
 
 - **Open-Meteo Air Quality API** — qualité de l'air et pollens (appelée pour toutes les requêtes, quel que soit le provider météo)
-- **Open-Meteo Geocoding API** — résolution ville → coordonnées
+- **Open-Meteo Geocoding API** — recherche de villes et résolution ville → coordonnées (données GeoNames)
 - **ip-api.com** — résolution IP → coordonnées (requêtes IP uniquement)
 - **Nominatim (OpenStreetMap)** — reverse geocoding coordonnées → nom de ville
 
@@ -314,6 +356,7 @@ WeatherAppApi/
 │   ├── utils/
 │   │   ├── conditions.py    # Lookup conditions + mapping WMO
 │   │   ├── timezone.py      # Helper timezone
+│   │   ├── geocoding.py     # Géocodage Open-Meteo (recherche + ville → coordonnées)
 │   │   └── ip_geolocation.py # Résolution IP → coordonnées
 │   ├── tests/
 │   │   ├── fixtures/        # Réponses mock JSON pour les tests
@@ -322,6 +365,7 @@ WeatherAppApi/
 │   │   ├── test_openmeteo.py
 │   │   ├── test_alerts.py
 │   │   ├── test_air_quality.py
+│   │   ├── test_search.py
 │   │   ├── test_update_conditions.py
 │   │   └── test_views.py
 │   ├── serializers.py
@@ -348,7 +392,7 @@ Gunicorn est installé à part dans le `Dockerfile`.
 python manage.py test api.tests
 ```
 
-157 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes, météo de la veille, qualité de l'air, mise à jour des conditions).
+183 tests couvrant les providers, les utilitaires et la couche vue (cache, fallback, authentification, `country_code`, champs v2, arrondi des positions, alertes, météo de la veille, qualité de l'air, mise à jour des conditions, recherche de villes).
 
 ## Licence
 
@@ -363,3 +407,4 @@ Chris Kouassi
 - Données météo principales : [Open-Meteo](https://open-meteo.com/) (CC BY 4.0)
 - Données météo fallback et alertes : [WeatherAPI](https://www.weatherapi.com/)
 - Qualité de l'air et pollens : [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api), contient des informations modifiées du Copernicus Atmosphere Monitoring Service (CAMS) — à créditer dans l'app.
+- Recherche de villes : [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api), données [GeoNames](https://www.geonames.org/) (CC BY 4.0) — à créditer dans l'app.

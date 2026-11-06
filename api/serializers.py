@@ -121,6 +121,17 @@ class AirQualitySerializer(serializers.Serializer):
     current = AirQualityValuesSerializer()
     days = AirQualityDaySerializer(many=True)
 
+class CitySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    region = serializers.CharField(allow_blank=True)
+    country = serializers.CharField(allow_blank=True)
+    country_code = serializers.CharField(allow_blank=True)
+    lat = serializers.FloatField()
+    lon = serializers.FloatField()
+    population = serializers.IntegerField(allow_null=True)
+    timezone = serializers.CharField(allow_blank=True)
+
 class WeatherDataSerializer(serializers.Serializer):
     last_updated = serializers.IntegerField()
     source = serializers.CharField(max_length=100)
