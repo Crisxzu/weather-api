@@ -20,7 +20,14 @@
       "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
       "code": 1000
     },
-    "humidity": 62
+    "humidity": 62,
+    "wind_kph": 14.4,
+    "wind_degree": 250,
+    "gust_kph": 22.3,
+    "uv": 6.0,
+    "precip_mm": 0.0,
+    "cloud": 25,
+    "vis_km": 10.0
   },
   "forecast": {
     "forecastday": [
@@ -35,7 +42,13 @@
             "text": "Sunny",
             "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
             "code": 1000
-          }
+          },
+          "daily_chance_of_rain": 0,
+          "daily_chance_of_snow": 0,
+          "totalprecip_mm": 0.0,
+          "maxwind_kph": 18.0,
+          "uv": 7.0,
+          "totalsnow_cm": 0.0
         },
         "hour": [
           {
@@ -48,7 +61,16 @@
               "text": "Clear",
               "icon": "//cdn.weatherapi.com/weather/64x64/night/113.png",
               "code": 1000
-            }
+            },
+            "chance_of_rain": 0,
+            "chance_of_snow": 0,
+            "precip_mm": 0.0,
+            "feelslike_c": 12.5,
+            "wind_kph": 8.6,
+            "uv": 0.0,
+            "cloud": 10,
+            "vis_km": 10.0,
+            "snow_cm": 0.0
           },
           {
             "time_epoch": 1748772000,
@@ -60,9 +82,22 @@
               "text": "Sunny",
               "icon": "//cdn.weatherapi.com/weather/64x64/day/113.png",
               "code": 1000
-            }
+            },
+            "chance_of_rain": 20,
+            "chance_of_snow": 0,
+            "precip_mm": 0.1,
+            "feelslike_c": 17.5,
+            "wind_kph": 13.0,
+            "uv": 6.0,
+            "cloud": 30,
+            "vis_km": 9.0,
+            "snow_cm": 0.0
           }
-        ]
+        ],
+        "astro": {
+          "sunrise": "05:47 AM",
+          "sunset": "09:50 PM"
+        }
       },
       {
         "date": "2025-06-02",
@@ -75,7 +110,13 @@
             "text": "Partly Cloudy",
             "icon": "//cdn.weatherapi.com/weather/64x64/day/116.png",
             "code": 1003
-          }
+          },
+          "daily_chance_of_rain": 60,
+          "daily_chance_of_snow": 0,
+          "totalprecip_mm": 3.2,
+          "maxwind_kph": 25.2,
+          "uv": 5.0,
+          "totalsnow_cm": 0.0
         },
         "hour": [
           {
@@ -88,9 +129,22 @@
               "text": "Clear",
               "icon": "//cdn.weatherapi.com/weather/64x64/night/113.png",
               "code": 1000
-            }
+            },
+            "chance_of_rain": 85,
+            "chance_of_snow": 0,
+            "precip_mm": 2.4,
+            "feelslike_c": 11.0,
+            "wind_kph": 18.0,
+            "uv": 0.0,
+            "cloud": 100,
+            "vis_km": 2.5,
+            "snow_cm": 1.2
           }
-        ]
+        ],
+        "astro": {
+          "sunrise": "05:46 AM",
+          "sunset": "09:51 PM"
+        }
       },
       {
         "date": "2025-06-03",
@@ -103,9 +157,31 @@
             "text": "Cloudy",
             "icon": "//cdn.weatherapi.com/weather/64x64/day/119.png",
             "code": 1006
-          }
+          },
+          "daily_chance_of_rain": 80,
+          "daily_chance_of_snow": 10,
+          "totalprecip_mm": 6.5,
+          "maxwind_kph": 30.0,
+          "uv": 3.0,
+          "totalsnow_cm": 3.5
         },
-        "hour": []
+        "hour": [],
+        "astro": {
+          "sunrise": "No sunrise",
+          "sunset": "No sunset"
+        }
+      }
+    ]
+  },
+  "alerts": {
+    "alert": [
+      {
+        "headline": "Orages violents",
+        "severity": "Moderate",
+        "event": "Thunderstorm warning",
+        "effective": "2025-06-01T14:00:00+02:00",
+        "expires": "2025-06-01T22:00:00+02:00",
+        "desc": "..."
       }
     ]
   }

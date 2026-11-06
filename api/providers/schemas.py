@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 
+# v2 fields are optional (default None) and appended after the v1 fields:
+# a provider that cannot supply a value leaves it at None, and v1 clients
+# simply ignore the extra keys.
+
 
 @dataclass
 class Condition:
@@ -28,6 +32,15 @@ class CurrentWeather:
     is_day: bool
     feels_like: float
     condition: Condition
+    # v2
+    humidity: float | None = None
+    wind_kph: float | None = None
+    wind_degree: float | None = None
+    gust_kph: float | None = None
+    uv: float | None = None
+    precip_mm: float | None = None
+    cloud_cover: float | None = None
+    visibility_km: float | None = None
 
 
 @dataclass
@@ -37,6 +50,16 @@ class HourlyForecast:
     timestamp: int
     is_day: bool
     condition: Condition
+    # v2
+    chance_of_rain: float | None = None
+    chance_of_snow: float | None = None
+    precip_mm: float | None = None
+    feels_like: float | None = None
+    wind_kph: float | None = None
+    uv: float | None = None
+    cloud_cover: float | None = None
+    visibility_km: float | None = None
+    snow_cm: float | None = None
 
 
 @dataclass
@@ -47,6 +70,74 @@ class DailyForecast:
     timestamp: int
     is_day: bool
     condition: Condition
+    # v2
+    chance_of_rain: float | None = None
+    chance_of_snow: float | None = None
+    total_precip_mm: float | None = None
+    max_wind_kph: float | None = None
+    uv: float | None = None
+    sunrise: int | None = None
+    sunset: int | None = None
+    total_snow_cm: float | None = None
+
+
+@dataclass
+class YesterdayWeather:
+    min_temp: float | None
+    max_temp: float | None
+    # Temperature yesterday at the current local hour, for "6° warmer than yesterday".
+    temp_same_hour: float | None
+    condition: Condition | None
+
+
+@dataclass
+class MinutelyPrecipitation:
+    timestamp: int
+    precip_mm: float | None
+
+
+@dataclass
+class WeatherAlert:
+    event: str
+    headline: str
+    severity: str
+    effective: int | None
+    expires: int | None
+
+
+@dataclass
+class Pollen:
+    """Pollen concentrations in grains/m³ (Europe only)."""
+    alder: float | None
+    birch: float | None
+    grass: float | None
+    mugwort: float | None
+    olive: float | None
+    ragweed: float | None
+
+
+@dataclass
+class AirQualityValues:
+    european_aqi: float | None
+    us_aqi: float | None
+    pm2_5: float | None
+    pm10: float | None
+    ozone: float | None
+    nitrogen_dioxide: float | None
+    # None outside the covered area (Europe); zeros mean "no pollen" (e.g. off-season).
+    pollen: Pollen | None
+
+
+@dataclass
+class AirQualityDay(AirQualityValues):
+    """Daily maxima. timestamp = midnight UTC of the date, like next_days."""
+    timestamp: int | None = None
+
+
+@dataclass
+class AirQuality:
+    current: AirQualityValues
+    days: list[AirQualityDay]
 
 
 @dataclass
@@ -58,3 +149,8 @@ class WeatherData:
     current: CurrentWeather
     next_24h: list[HourlyForecast]
     next_days: list[DailyForecast]
+    # v2 — None means "this provider does not support it", not "nothing to report".
+    next_minutes: list[MinutelyPrecipitation] | None = None
+    alerts: list[WeatherAlert] | None = None
+    yesterday: YesterdayWeather | None = None
+    air_quality: AirQuality | None = None

@@ -10,6 +10,21 @@ from api.providers.schemas import (
     Condition, CurrentWeather, DailyForecast, HourlyForecast, Location, WeatherData,
 )
 
+# The view looks up alerts separately when the provider has none; keep these
+# tests off the network (same for air quality). Tests that need them patch explicitly.
+_alerts_patcher = patch('api.views.get_alerts', return_value=None)
+_air_quality_patcher = patch('api.views.get_air_quality', return_value=None)
+
+
+def setUpModule():
+    _alerts_patcher.start()
+    _air_quality_patcher.start()
+
+
+def tearDownModule():
+    _alerts_patcher.stop()
+    _air_quality_patcher.stop()
+
 
 def _make_weather_data(**overrides):
     defaults = dict(
@@ -211,3 +226,206 @@ class WeatherViewFallbackTests(TestCase):
 
         response = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
         self.assertEqual(response.status_code, 503)
+
+
+class PositionRoundingTests(TestCase):
+
+    def test_rounds_to_two_decimals(self):
+        from api.views import round_position
+        self.assertEqual(round_position('48.856613,2.352222'), '48.86,2.35')
+        self.assertEqual(round_position(' 48.8566 , 2.3522 '), '48.86,2.35')
+        self.assertEqual(round_position('-33.8688,151.2093'), '-33.87,151.21')
+
+    def test_negative_zero_is_normalized(self):
+        from api.views import round_position
+        self.assertEqual(round_position('-0.001,0.001'), '0.00,0.00')
+
+    def test_invalid_or_missing_position_is_left_untouched(self):
+        from api.views import round_position
+        self.assertEqual(round_position('not-valid'), 'not-valid')
+        self.assertIsNone(round_position(None))
+
+
+class WeatherViewV2Tests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_nearby_positions_share_cache_and_provider_gets_rounded_position(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.client.get(self.url, {'position': '48.8571,2.3519'}, **self.auth)
+
+        provider.get_weather.assert_called_once()
+        self.assertEqual(provider.get_weather.call_args[1]['position'], '48.86,2.35')
+
+    @patch('api.views.get_primary_provider')
+    def test_v2_blocks_are_null_when_unsupported(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertIsNone(data['next_minutes'])
+        self.assertIsNone(data['alerts'])
+        self.assertIn('chance_of_rain', data['next_24h'][0])
+        self.assertIsNone(data['next_24h'][0]['chance_of_rain'])
+
+    @patch('api.views.get_primary_provider')
+    def test_v2_fields_are_serialized(self, mock_registry):
+        from api.providers.schemas import MinutelyPrecipitation, WeatherAlert
+        provider = MagicMock()
+        weather = _make_weather_data(
+            next_minutes=[MinutelyPrecipitation(timestamp=1748772000, precip_mm=0.4)],
+            alerts=[WeatherAlert(event='Storm', headline='Orages', severity='Moderate', effective=1, expires=None)],
+        )
+        weather.next_24h[0].chance_of_rain = 80
+        weather.next_days[0].sunrise = 1748749620
+        provider.get_weather.return_value = weather
+        mock_registry.return_value = provider
+
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertEqual(data['next_minutes'], [{'timestamp': 1748772000, 'precip_mm': 0.4}])
+        self.assertEqual(data['alerts'][0]['event'], 'Storm')
+        self.assertIsNone(data['alerts'][0]['expires'])
+        self.assertEqual(data['next_24h'][0]['chance_of_rain'], 80)
+        self.assertEqual(data['next_days'][0]['sunrise'], 1748749620)
+
+    @patch('api.views.cache.set')
+    @patch('api.views.get_primary_provider')
+    def test_short_ttl_when_next_minutes_present(self, mock_registry, mock_cache_set):
+        from api.providers.schemas import MinutelyPrecipitation
+        from api.views import NOWCAST_CACHE_TTL
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data(
+            next_minutes=[MinutelyPrecipitation(timestamp=1748772000, precip_mm=0.0)],
+        )
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.assertEqual(mock_cache_set.call_args[0][2], NOWCAST_CACHE_TTL)
+
+    @patch('api.views.cache.set')
+    @patch('api.views.get_primary_provider')
+    def test_default_ttl_without_next_minutes(self, mock_registry, mock_cache_set):
+        from api.views import CACHE_TTL
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+
+        self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth)
+        self.assertEqual(mock_cache_set.call_args[0][2], CACHE_TTL)
+
+
+class WeatherViewAlertsTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_alerts_fetched_separately_when_provider_has_none(self, mock_registry):
+        from api.providers.schemas import WeatherAlert
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()  # alerts=None, like Open-Meteo
+        mock_registry.return_value = provider
+        alert = WeatherAlert(event='Storm', headline='Orages', severity='Moderate', effective=1, expires=2)
+
+        with patch('api.views.get_alerts', return_value=[alert]) as mock_alerts:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_alerts.assert_called_once_with(48.8566, 2.3522)
+        self.assertEqual(data['alerts'][0]['event'], 'Storm')
+
+    @patch('api.views.get_primary_provider')
+    def test_alerts_not_refetched_when_provider_supplied_them(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data(alerts=[])  # like WeatherAPI
+        mock_registry.return_value = provider
+
+        with patch('api.views.get_alerts') as mock_alerts:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_alerts.assert_not_called()
+        self.assertEqual(data['alerts'], [])
+
+
+class WeatherViewYesterdayTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_yesterday_serialized(self, mock_registry):
+        from api.providers.schemas import YesterdayWeather
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data(yesterday=YesterdayWeather(
+            min_temp=8.0, max_temp=15.0, temp_same_hour=None,
+            condition=Condition(code=1183, text='Light rain', icon=296),
+        ))
+        mock_registry.return_value = provider
+
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertEqual(data['yesterday']['max_temp'], 15.0)
+        self.assertIsNone(data['yesterday']['temp_same_hour'])
+        self.assertEqual(data['yesterday']['condition']['code'], 1183)
+
+    @patch('api.views.get_primary_provider')
+    def test_yesterday_null(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertIsNone(data['yesterday'])
+
+
+class WeatherViewAirQualityTests(TestCase):
+
+    def setUp(self):
+        cache.clear()
+        _, self.api_key = APIKey.objects.create_key(name='test-key')
+        self.url = reverse('api:weather')
+        self.auth = {'HTTP_AUTHORIZATION': f'Api-Key {self.api_key}'}
+
+    @patch('api.views.get_primary_provider')
+    def test_air_quality_fetched_and_serialized(self, mock_registry):
+        from api.providers.schemas import AirQuality, AirQualityDay, AirQualityValues, Pollen
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+        pollen = Pollen(alder=0.0, birch=12.0, grass=None, mugwort=0.0, olive=0.0, ragweed=0.0)
+        values = dict(european_aqi=40, us_aqi=55, pm2_5=10.0, pm10=20.0, ozone=60.0, nitrogen_dioxide=15.0)
+        aq = AirQuality(
+            current=AirQualityValues(**values, pollen=pollen),
+            days=[AirQualityDay(**values, pollen=None, timestamp=1748736000)],
+        )
+
+        with patch('api.views.get_air_quality', return_value=aq) as mock_aq:
+            data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+
+        mock_aq.assert_called_once_with(48.8566, 2.3522)
+        self.assertEqual(data['air_quality']['current']['european_aqi'], 40)
+        self.assertEqual(data['air_quality']['current']['pollen']['birch'], 12.0)
+        self.assertIsNone(data['air_quality']['current']['pollen']['grass'])
+        self.assertIsNone(data['air_quality']['days'][0]['pollen'])
+        self.assertEqual(data['air_quality']['days'][0]['timestamp'], 1748736000)
+
+    @patch('api.views.get_primary_provider')
+    def test_air_quality_null_when_unavailable(self, mock_registry):
+        provider = MagicMock()
+        provider.get_weather.return_value = _make_weather_data()
+        mock_registry.return_value = provider
+        data = self.client.get(self.url, {'position': '48.8566,2.3522'}, **self.auth).json()
+        self.assertIsNone(data['air_quality'])

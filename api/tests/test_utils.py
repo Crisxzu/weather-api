@@ -98,3 +98,77 @@ class ResolveIpTests(TestCase):
         mock_get.side_effect = req.exceptions.Timeout
         with self.assertRaises(WeatherServiceUnavailableError):
             resolve_ip('81.2.69.142')
+
+
+class ConditionLanguageAliasTests(TestCase):
+
+    def test_new_condition_codes_are_known(self):
+        self.assertEqual(get_condition_by_code(1036, is_day=True, lang_iso='fr'), 'Brume de fumée')
+
+    def test_legacy_chinese_code_still_translated(self):
+        # conditions.json renamed zh -> zh_cn; clients may still send zh
+        self.assertEqual(
+            get_condition_by_code(1000, is_day=True, lang_iso='zh'),
+            get_condition_by_code(1000, is_day=True, lang_iso='zh_cn'),
+        )
+        self.assertNotEqual(get_condition_by_code(1000, is_day=True, lang_iso='zh'), 'Sunny')
+
+    def test_legacy_dialect_codes_still_translated(self):
+        for legacy in ('zh_hsn', 'zh_wuu', 'zh_yue'):
+            self.assertNotEqual(get_condition_by_code(1000, is_day=True, lang_iso=legacy), 'Sunny', legacy)
+
+    def test_lang_code_is_normalized(self):
+        self.assertEqual(
+            get_condition_by_code(1000, is_day=True, lang_iso='zh-TW'),
+            get_condition_by_code(1000, is_day=True, lang_iso='zh_tw'),
+        )
+
+
+class ConditionsReloadTests(TestCase):
+
+    def _store(self, tmp_path, data):
+        import json
+        from api.utils.conditions import _ConditionsStore
+        path = tmp_path / 'conditions.json'
+        path.write_text(json.dumps(data))
+        return path, _ConditionsStore(path)
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp_path = Path(self._tmp.name)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _entry(self, code, day):
+        return {'code': code, 'day': day, 'night': day, 'icon': 113, 'languages': []}
+
+    @patch('api.utils.conditions._RELOAD_CHECK_SECONDS', 0)
+    def test_reloads_when_file_changes(self):
+        import json
+        import os
+        path, store = self._store(self.tmp_path, [self._entry(1000, 'Sunny')])
+        self.assertIsNone(store.get(1036))
+
+        path.write_text(json.dumps([self._entry(1000, 'Sunny'), self._entry(1036, 'Smoky haze')]))
+        os.utime(path, (1, 2_000_000_000))  # force a different mtime
+        self.assertEqual(store.get(1036)['day'], 'Smoky haze')
+
+    @patch('api.utils.conditions._RELOAD_CHECK_SECONDS', 0)
+    def test_keeps_previous_version_if_new_file_is_broken(self):
+        import os
+        path, store = self._store(self.tmp_path, [self._entry(1000, 'Sunny')])
+        path.write_text('{not json')
+        os.utime(path, (1, 2_000_000_000))
+        with self.assertLogs('api.utils.conditions', level='ERROR'):
+            self.assertEqual(store.get(1000)['day'], 'Sunny')
+
+    @patch('api.utils.conditions._RELOAD_CHECK_SECONDS', 3600)
+    def test_does_not_stat_on_every_call(self):
+        path, store = self._store(self.tmp_path, [self._entry(1000, 'Sunny')])
+        store.get(1000)
+        with patch('api.utils.conditions.os.stat') as mock_stat:
+            store.get(1000)
+        mock_stat.assert_not_called()

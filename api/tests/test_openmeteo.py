@@ -197,3 +197,212 @@ class OpenMeteoProviderErrorTests(TestCase):
         mock_get.side_effect = side_effect
         with self.assertRaises(WeatherServiceUnavailableError):
             OpenMeteoProvider().get_weather(position=None, city='Paris', country_code=None, ip_address=None, lang_iso='en')
+
+
+def _frozen_paris_now(_tz_id):
+    import pytz
+    from datetime import datetime
+    return pytz.timezone('Europe/Paris').localize(datetime(2025, 6, 1, 12, 30))
+
+
+# 2025-06-01 12:00 Europe/Paris (CEST, UTC+2) == 10:00 UTC
+_PARIS_NOON_EPOCH = 1748772000
+_UTC_MIDNIGHT_2025_06_01 = 1748736000
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoTimestampTests(TestCase):
+
+    def _get(self, mock_get, forecast=None):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast or _load_fixture('openmeteo_response.json'))
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_hourly_times_are_read_in_location_timezone(self, mock_get, _now):
+        result = self._get(mock_get)
+        # Local 12:00 must be 10:00 UTC, not 12:00 UTC (the old +2h shift).
+        self.assertEqual(result.next_24h[0].timestamp, _PARIS_NOON_EPOCH)
+
+    def test_next_24h_window_starts_at_current_local_hour(self, mock_get, _now):
+        result = self._get(mock_get)
+        # 12:00 today through 12:00 tomorrow, inclusive
+        self.assertEqual(len(result.next_24h), 25)
+        self.assertEqual(result.next_24h[-1].timestamp, _PARIS_NOON_EPOCH + 24 * 3600)
+
+    def test_day_timestamps_stay_utc_midnight_like_weatherapi(self, mock_get, _now):
+        result = self._get(mock_get)
+        self.assertEqual(result.next_days[0].timestamp, _UTC_MIDNIGHT_2025_06_01)
+
+    def test_sunrise_and_sunset_are_converted_from_local_time(self, mock_get, _now):
+        result = self._get(mock_get)
+        # 05:47 / 21:50 CEST
+        self.assertEqual(result.next_days[0].sunrise, _UTC_MIDNIGHT_2025_06_01 + 3 * 3600 + 47 * 60)
+        self.assertEqual(result.next_days[0].sunset, _UTC_MIDNIGHT_2025_06_01 + 19 * 3600 + 50 * 60)
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoV2FieldsTests(TestCase):
+
+    def _get(self, mock_get, forecast=None):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast or _load_fixture('openmeteo_response.json'))
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_requests_v2_variables(self, mock_get, _now):
+        self._get(mock_get)
+        forecast_call = next(c for c in mock_get.call_args_list if 'api.open-meteo.com' in c[0][0])
+        params = forecast_call[1]['params']
+        self.assertIn('precipitation_probability', params['hourly'])
+        self.assertIn('sunrise', params['daily'])
+        self.assertEqual(params['minutely_15'], 'precipitation')
+        self.assertEqual(params['forecast_minutely_15'], 8)
+
+    def test_current_v2_fields(self, mock_get, _now):
+        current = self._get(mock_get).current
+        self.assertEqual(current.humidity, 62)
+        self.assertEqual(current.wind_kph, 14.4)
+        self.assertEqual(current.wind_degree, 250)
+        self.assertEqual(current.gust_kph, 22.3)
+        self.assertEqual(current.uv, 6.0)
+        self.assertEqual(current.precip_mm, 0.0)
+
+    def test_hourly_v2_fields(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        hour = self._get(mock_get, forecast).next_24h[0]
+        i = forecast['hourly']['time'].index('2025-06-01T12:00')
+        self.assertEqual(hour.chance_of_rain, forecast['hourly']['precipitation_probability'][i])
+        self.assertEqual(hour.precip_mm, forecast['hourly']['precipitation'][i])
+        self.assertEqual(hour.feels_like, forecast['hourly']['apparent_temperature'][i])
+        self.assertEqual(hour.wind_kph, forecast['hourly']['wind_speed_10m'][i])
+        self.assertEqual(hour.uv, forecast['hourly']['uv_index'][i])
+
+    def test_chance_of_snow_is_null_rather_than_guessed(self, mock_get, _now):
+        result = self._get(mock_get)
+        self.assertIsNone(result.next_24h[0].chance_of_snow)
+        self.assertIsNone(result.next_days[0].chance_of_snow)
+
+    def test_daily_v2_fields(self, mock_get, _now):
+        day = self._get(mock_get).next_days[1]
+        self.assertEqual(day.chance_of_rain, 60)
+        self.assertEqual(day.total_precip_mm, 3.2)
+        self.assertEqual(day.max_wind_kph, 25.2)
+        self.assertEqual(day.uv, 5.0)
+
+    def test_null_values_in_response_are_passed_through(self, mock_get, _now):
+        # Open-Meteo returns null probabilities beyond some models' horizon
+        self.assertIsNone(self._get(mock_get).next_days[2].chance_of_rain)
+
+    def test_missing_v2_variables_do_not_crash(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        del forecast['hourly']['uv_index']
+        del forecast['daily']['sunrise']
+        del forecast['minutely_15']
+        result = self._get(mock_get, forecast)
+        self.assertIsNone(result.next_24h[0].uv)
+        self.assertIsNone(result.next_days[0].sunrise)
+        self.assertIsNone(result.next_minutes)
+
+    def test_next_minutes_15_minute_steps(self, mock_get, _now):
+        minutes = self._get(mock_get).next_minutes
+        self.assertEqual(len(minutes), 8)
+        self.assertEqual(minutes[0].timestamp, _PARIS_NOON_EPOCH)
+        self.assertEqual(minutes[1].timestamp - minutes[0].timestamp, 900)
+        self.assertEqual(minutes[3].precip_mm, 0.4)
+
+    def test_alerts_are_null_because_unsupported(self, mock_get, _now):
+        self.assertIsNone(self._get(mock_get).alerts)
+
+    def test_forecast_days_follows_env(self, mock_get, _now):
+        with patch.dict('os.environ', {'WEATHER_FORECAST_DAYS': '7'}):
+            self._get(mock_get)
+        forecast_call = next(c for c in mock_get.call_args_list if 'api.open-meteo.com' in c[0][0])
+        self.assertEqual(forecast_call[1]['params']['forecast_days'], 7)
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoSkyAndSnowTests(TestCase):
+
+    def _get(self, mock_get, forecast=None):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast or _load_fixture('openmeteo_response.json'))
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_current_cloud_cover_and_visibility_in_km(self, mock_get, _now):
+        current = self._get(mock_get).current
+        self.assertEqual(current.cloud_cover, 25)
+        self.assertEqual(current.visibility_km, 24.14)
+
+    def test_hourly_cloud_visibility_snow(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        forecast['hourly']['snowfall'] = [1.4] * len(forecast['hourly']['time'])
+        hour = self._get(mock_get, forecast).next_24h[0]
+        i = forecast['hourly']['time'].index('2025-06-01T12:00')
+        self.assertEqual(hour.cloud_cover, forecast['hourly']['cloud_cover'][i])
+        self.assertEqual(hour.visibility_km, forecast['hourly']['visibility'][i] / 1000)
+        self.assertEqual(hour.snow_cm, 1.4)
+
+    def test_fog_visibility_is_kept_precise(self, mock_get, _now):
+        forecast = _load_fixture('openmeteo_response.json')
+        i = forecast['hourly']['time'].index('2025-06-01T12:00')
+        forecast['hourly']['visibility'][i] = 350.0
+        self.assertEqual(self._get(mock_get, forecast).next_24h[0].visibility_km, 0.35)
+
+    def test_daily_total_snow(self, mock_get, _now):
+        self.assertEqual(self._get(mock_get).next_days[2].total_snow_cm, 3.5)
+
+
+def _with_yesterday(forecast):
+    """Prepend 2025-05-31 to the fixture, as Open-Meteo does with past_days=1."""
+    h, d = forecast['hourly'], forecast['daily']
+    past_hours = [f'2025-05-31T{i:02d}:00' for i in range(24)]
+    for key, values in h.items():
+        if key == 'time':
+            h[key] = past_hours + values
+        elif key == 'temperature_2m':
+            h[key] = [10.0 + i * 0.5 for i in range(24)] + values  # 12:00 -> 16.0
+        else:
+            h[key] = values[:24] + values
+    yesterday_daily = {
+        'time': '2025-05-31', 'weather_code': 61, 'temperature_2m_max': 15.0, 'temperature_2m_min': 8.0,
+    }
+    for key, values in d.items():
+        d[key] = [yesterday_daily.get(key, values[0])] + values
+    return forecast
+
+
+@patch('api.providers.openmeteo.get_time_for_timezone', side_effect=_frozen_paris_now)
+@patch('api.providers.openmeteo.requests.get')
+class OpenMeteoYesterdayTests(TestCase):
+
+    def _get(self, mock_get, forecast):
+        mock_get.side_effect = _make_requests_get_side_effect(forecast)
+        return OpenMeteoProvider().get_weather(position='48.8566,2.3522', city=None, country_code=None, ip_address=None, lang_iso='en')
+
+    def test_requests_past_day(self, mock_get, _now):
+        self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json')))
+        forecast_call = next(c for c in mock_get.call_args_list if 'api.open-meteo.com' in c[0][0])
+        self.assertEqual(forecast_call[1]['params']['past_days'], 1)
+
+    def test_yesterday_block(self, mock_get, _now):
+        yesterday = self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json'))).yesterday
+        self.assertEqual(yesterday.min_temp, 8.0)
+        self.assertEqual(yesterday.max_temp, 15.0)
+        self.assertEqual(yesterday.temp_same_hour, 16.0)  # 2025-05-31T12:00
+        self.assertEqual(yesterday.condition.code, get_condition_code_for_wmo(61))
+
+    def test_yesterday_does_not_leak_into_today(self, mock_get, _now):
+        plain = self._get(mock_get, _load_fixture('openmeteo_response.json'))
+        shifted = self._get(mock_get, _with_yesterday(_load_fixture('openmeteo_response.json')))
+        self.assertEqual(shifted.current.min_temp, plain.current.min_temp)
+        self.assertEqual(shifted.current.max_temp, plain.current.max_temp)
+        self.assertEqual(len(shifted.next_days), 3)
+        self.assertEqual(shifted.next_days[0].timestamp, _UTC_MIDNIGHT_2025_06_01)
+        self.assertEqual([h.timestamp for h in shifted.next_24h], [h.timestamp for h in plain.next_24h])
+
+    def test_no_past_day_gives_null(self, mock_get, _now):
+        self.assertIsNone(self._get(mock_get, _load_fixture('openmeteo_response.json')).yesterday)
+
+
+def get_condition_code_for_wmo(wmo):
+    from api.utils.conditions import get_condition_by_wmo_code
+    return get_condition_by_wmo_code(wmo).code

@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from dataclasses import asdict
 
 from django.core.cache import cache
@@ -8,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_api_key.permissions import HasAPIKey
 
+from api.providers.air_quality import get_air_quality
+from api.providers.alerts import get_alerts
 from api.providers.base import WeatherServiceError, WeatherServiceUnavailableError
 from api.providers.registry import get_primary_provider, get_fallback_provider
 from api.serializers import WeatherDataSerializer
@@ -15,13 +18,32 @@ from api.serializers import WeatherDataSerializer
 logger = logging.getLogger(__name__)
 
 CACHE_TTL = int(os.getenv('WEATHER_CACHE_TTL', 3600))
+# Shorter TTL when the response carries 15-minute precipitation ("rain in ~20 min").
+NOWCAST_CACHE_TTL = int(os.getenv('WEATHER_NOWCAST_CACHE_TTL', 900))
+
+_position_regex = re.compile(r'^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$')
+POSITION_PRECISION = 2  # ~1.1 km: nearby users share cache entries and upstream calls
+
+
+def round_position(position: str | None) -> str | None:
+    """Round "lat,lon" to POSITION_PRECISION decimals; leave anything else untouched."""
+    if not position:
+        return position
+    m = _position_regex.match(position)
+    if not m:
+        return position
+    # "+ 0.0" turns -0.0 into 0.0 so both spellings share one cache key
+    lat, lon = (round(float(g), POSITION_PRECISION) + 0.0 for g in m.groups())
+    return f'{lat:.{POSITION_PRECISION}f},{lon:.{POSITION_PRECISION}f}'
 
 
 class WeatherDataView(APIView):
     permission_classes = [HasAPIKey]
 
     def get(self, request):
-        position = request.query_params.get('position')
+        # Rounded before both the cache key and the provider call, so a cached
+        # entry is exactly what any user in that ~1 km cell would have received.
+        position = round_position(request.query_params.get('position'))
         city = request.query_params.get('city')
         country_code = request.query_params.get('country_code')
         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
@@ -57,13 +79,19 @@ class WeatherDataView(APIView):
             logger.exception('Unexpected exception while handling weather request')
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        if weather_data.alerts is None:
+            weather_data.alerts = get_alerts(weather_data.location.lat, weather_data.location.lon)
+        if weather_data.air_quality is None:
+            weather_data.air_quality = get_air_quality(weather_data.location.lat, weather_data.location.lon)
+
         serializer = WeatherDataSerializer(data=asdict(weather_data))
         if not serializer.is_valid():
             logger.error('Serializer validation failed: %s', serializer.errors)
             return Response(status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        cache.set(cache_key, serializer.data, CACHE_TTL)
-        logger.info('Weather data cached for key=%s (TTL=%ss)', cache_key, CACHE_TTL)
+        ttl = min(CACHE_TTL, NOWCAST_CACHE_TTL) if serializer.data.get('next_minutes') else CACHE_TTL
+        cache.set(cache_key, serializer.data, ttl)
+        logger.info('Weather data cached for key=%s (TTL=%ss)', cache_key, ttl)
         return Response(serializer.data)
 
     def _fetch_with_fallback(self, query_kwargs: dict) -> dict:
